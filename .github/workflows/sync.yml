@@ -1,0 +1,51 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: "0 0 * * *" # Runs daily
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: crack
+          fetch-depth: 0
+          
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+      - name: Add Upstream
+        run: |
+          git remote add upstream https://github.com/skopevoj/spoti.pw.git
+          git fetch upstream
+          
+      - name: Merge Upstream Main
+        run: |
+          git merge upstream/main --no-edit || { git merge --abort; echo "Merge conflict with main"; exit 1; }
+          
+      - name: Merge Upstream Beta
+        run: |
+          git merge upstream/beta --no-edit || { git merge --abort; echo "Merge conflict with beta"; exit 1; }
+
+      - name: Push Changes
+        env:
+          PAT: ${{ secrets.PAT }}
+        run: |
+          if git diff --quiet origin/crack HEAD; then
+            echo "No changes to push"
+          else
+            if [ -n "$PAT" ]; then
+              # If a PAT is provided, use it so that the push triggers other workflows like build-deb.yml
+              git remote set-url origin https://x-access-token:${PAT}@github.com/${{ github.repository }}.git
+            fi
+            git push origin crack
+          fi
