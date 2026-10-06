@@ -2,50 +2,73 @@ name: Sync Upstream
 
 on:
   schedule:
-    - cron: "0 0 * * *" # Runs daily
+    - cron: "0 0 * * *" # Runs daily at midnight UTC
   workflow_dispatch:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    outputs:
+      updated: ${{ steps.push.outputs.updated }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: crack
           fetch-depth: 0
-          
+          token: ${{ secrets.PAT }}
+
       - name: Configure Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-      - name: Add Upstream
+
+      - name: Add Upstream and Fetch
         run: |
           git remote add upstream https://github.com/skopevoj/spoti.pw.git
           git fetch upstream
-          
+
       - name: Merge Upstream Main
         run: |
-          git merge upstream/main --no-edit || { git merge --abort; echo "Merge conflict with main"; exit 1; }
-          
+          git merge upstream/main --no-edit || { git merge --abort; echo "::error::Merge conflict with upstream/main — manual resolution required"; exit 1; }
+
       - name: Merge Upstream Beta
         run: |
-          git merge upstream/beta --no-edit || { git merge --abort; echo "Merge conflict with beta"; exit 1; }
+          git merge upstream/beta --no-edit || { git merge --abort; echo "::error::Merge conflict with upstream/beta — manual resolution required"; exit 1; }
 
       - name: Push Changes
-        env:
-          PAT: ${{ secrets.PAT }}
+        id: push
         run: |
           if git diff --quiet origin/crack HEAD; then
-            echo "No changes to push"
+            echo "No new upstream changes."
+            echo "updated=false" >> $GITHUB_OUTPUT
           else
-            if [ -n "$PAT" ]; then
-              # If a PAT is provided, use it so that the push triggers other workflows like build-deb.yml
-              git remote set-url origin https://x-access-token:${PAT}@github.com/${{ github.repository }}.git
-            fi
             git push origin crack
+            echo "updated=true" >> $GITHUB_OUTPUT
           fi
+
+  build-ipa:
+    needs: sync
+    if: needs.sync.outputs.updated == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger IPA Build
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT }}
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-ipa.yml',
+              ref: 'crack',
+              inputs: {
+                ipa_url: '${{ secrets.IPA_URL }}',
+                upload_method: 'both'
+              }
+            });
+            console.log('IPA build triggered successfully!');

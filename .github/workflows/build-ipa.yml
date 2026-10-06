@@ -4,8 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       ipa_url:
-        description: "Direct link to a decrypted Spotify IPA"
-        required: true
+        description: "Direct link to a decrypted Spotify IPA (leave blank to use IPA_URL secret)"
+        required: false
         type: string
       upload_method:
         description: "Where to put the result"
@@ -21,6 +21,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: crack
 
       - uses: levibostian/action-hide-sensitive-inputs@v1
 
@@ -40,9 +42,18 @@ jobs:
           python3 -m pip install --break-system-packages git+https://github.com/asdfzxcvbn/pyzule-rw.git
 
       - name: Download IPA
+        env:
+          INPUT_IPA_URL: ${{ inputs.ipa_url }}
+          SECRET_IPA_URL: ${{ secrets.IPA_URL }}
         run: |
+          # Use manually-provided URL first, fall back to the secret
+          RESOLVED_URL="${INPUT_IPA_URL:-$SECRET_IPA_URL}"
+          if [ -z "$RESOLVED_URL" ]; then
+            echo "::error::No IPA URL provided. Either pass one as an input or set the IPA_URL repository secret."
+            exit 1
+          fi
           mkdir -p ipa
-          curl -fsSL "${{ inputs.ipa_url }}" -o ipa/spotify.ipa
+          curl -fsSL "$RESOLVED_URL" -o ipa/spotify.ipa
           case "$(file --mime-type -b ipa/spotify.ipa)" in application/zip|application/x-ios-app) ;; *) echo "::error::Not an IPA"; exit 1 ;; esac
 
       - run: make release
