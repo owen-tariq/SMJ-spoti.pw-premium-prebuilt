@@ -8,11 +8,6 @@
 extern NSString *const SGKofiURL;
 UIColor *SGKofiColor(void);
 
-// A glass capsule with a Ko-fi rim circling it and a breathing glow. Prominent tints the glass itself.
-@interface SGKofiButton : UIControl
-- (instancetype)initWithTitle:(NSString *)title prominent:(BOOL)prominent;
-@end
-
 void SGShowDonateSheet(void);
 SGModRow *SGDonateRow(void);
 void SGWatchForDonate(void);
@@ -20,3 +15,5 @@ void SGWatchForDonate(void);
 void SGDonateAfterTour(BOOL restarting);
 BOOL SGDonateAfterTourPending(void);
 void SGOfferDonate(void);
+BOOL SGDonateShown(void);     // this run
+void SGDonateHoldOff(void);   // another sheet asked instead; the next ask waits a full round
