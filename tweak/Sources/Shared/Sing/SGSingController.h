@@ -13,7 +13,7 @@ typedef NS_ENUM(NSUInteger, SGSingState) {
 static inline BOOL SGSingStateIsOn(SGSingState state) {
     return state == SGSingActive || state == SGSingReady || state == SGSingRecovering;
 }
-BOOL SGSingSupported(void); // iOS 27, the first the separator runs on
+BOOL SGSingSupported(void); // iOS 18, the deployment floor of the Core ML model
 // Sing's switch (the redesign's Mod Settings > Karaoke), at launch and whenever it is turned. Off, Sing does no
 // work and is unavailable; on, it is available once its voice model is on this iPhone (SGSingModel.h).
 void SGSingConfigure(BOOL enabled);

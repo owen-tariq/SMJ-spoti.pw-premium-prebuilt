@@ -231,7 +231,7 @@ static void allOff(SGDSPEngine *engine) {
     SGDSPEngineSetConvolver(engine, false, NULL, 0, error, sizeof error);
     SGDSPEngineSetDDC(engine, false, NULL, error, sizeof error);
     SGDSPEngineSetLiveprog(engine, false, NULL, error, sizeof error);
-    SGDSPEngineSetReverb(engine, false, 5);
+    SGDSPEngineSetReverb(engine, false, 5, 100);
     SGDSPEngineSetStereoWide(engine, false, 60);
     SGDSPEngineSetCrossfeed(engine, false, 2);
     SGDSPEngineSetTube(engine, false, 2);
@@ -772,7 +772,7 @@ static void checkReverb(void) {
     for (int p = 0; p < SGDSPReverbPresetCount; p++) {
         SGDSPEngine *engine = SGDSPEngineCreate(kRate);
         allOff(engine);
-        SGDSPEngineSetReverb(engine, true, p);
+        SGDSPEngineSetReverb(engine, true, p, 100);
         Audio impulse = makeAudio((size_t)kRate * 12);
         impulse.left[kSGDSPEngineBlock * 2] = impulse.right[kSGDSPEngineBlock * 2] = 0.5f;
         run(engine, impulse, kPattern1024);
@@ -786,6 +786,20 @@ static void checkReverb(void) {
         SGDSPEngineFree(engine);
     }
     CHECK(finite && times[0] < times[2] && times[2] < times[3] && times[6] < times[7] && times[7] < times[8], "tails by preset: %s", line);
+
+    SGDSPEngine *engine = SGDSPEngineCreate(kRate);
+    allOff(engine);
+    SGDSPEngineSetReverb(engine, true, 5, 0);
+    Audio impulse = makeAudio((size_t)kRate * 2);
+    impulse.left[kSGDSPEngineBlock * 2] = impulse.right[kSGDSPEngineBlock * 2] = 0.5f;
+    run(engine, impulse, kPattern1024);
+    float tail = 0;
+    for (size_t i = kSGDSPEngineBlock * 3 + 1; i < impulse.frames; i++) {
+        tail = fmaxf(tail, fmaxf(fabsf(impulse.left[i]), fabsf(impulse.right[i])));
+    }
+    CHECK(tail < 1e-6f, "0%% reverb leaves no wet tail (peak %.8f)", tail);
+    freeAudio(impulse);
+    SGDSPEngineFree(engine);
 }
 
 static void checkWide(void) {
@@ -933,7 +947,7 @@ static bool setEffect(SGDSPEngine *engine, Effect effect, bool on) {
         ok = SGDSPEngineSetLiveprog(engine, on, "desc: width\n@init\nw = 0.3;\n@sample\nm = (spl0 + spl1) / 2;\ns = (spl0 - spl1) / 2 * (1 + w);\nspl0 = m + s;\nspl1 = m - s;\n",
                                     error, sizeof error);
         break;
-    case kReverb: SGDSPEngineSetReverb(engine, on, 5); break;
+    case kReverb: SGDSPEngineSetReverb(engine, on, 5, 100); break;
     case kWide: SGDSPEngineSetStereoWide(engine, on, 60); break;
     case kCrossfeed: SGDSPEngineSetCrossfeed(engine, on, 2); break;
     case kTube: SGDSPEngineSetTube(engine, on, 2); break;
@@ -1109,7 +1123,7 @@ static void *hammer(void *context) {
             // Setters that leave the sound as it is, so every block, processed or passed dry, must be exact.
             switch (i % 6) {
             case 0: SGDSPEngineSetOutput(h->engine, 0, -0.1, 60); break;
-            case 1: SGDSPEngineSetReverb(h->engine, false, 5); break;
+            case 1: SGDSPEngineSetReverb(h->engine, false, 5, 100); break;
             case 2: SGDSPEngineSetEqualizer(h->engine, false, kEqFrequencies, zeros); break;
             case 3: SGDSPEngineSetCrossfeed(h->engine, false, 2); break;
             case 4: SGDSPEngineSetLiveprog(h->engine, false, NULL, error, sizeof error); break;

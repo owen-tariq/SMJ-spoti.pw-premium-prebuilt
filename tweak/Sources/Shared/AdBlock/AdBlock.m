@@ -39,11 +39,6 @@ static NSString *const upsellFlags[] = {
     @"ios-system-listeningparties.preview_ended_upsell_enabled",
 };
 
-static NSString *const socialProofFlags[] = {
-    @"ios-feature-search.social_proof_playlist_enabled",
-    @"ios-feature-search.social_proof_plays_in_search_enabled",
-};
-
 static BOOL listed(NSString *key, NSString *const list[], size_t count) {
     for (size_t i = 0; i < count; i++) {
         if ([key isEqualToString:list[i]]) return YES;
@@ -54,7 +49,6 @@ static BOOL listed(NSString *key, NSString *const list[], size_t count) {
 BOOL SGAdBlockForcesFlagOff(NSString *key) {
     if (SGHidden(SGKeyHideAds) && listed(key, adFlags, sizeof(adFlags) / sizeof(adFlags[0]))) return YES;
     if (SGHidden(SGKeyHideSearchVideos) && [key isEqualToString:@"ios-feature-search.video_carousel_section_enabled"]) return YES;
-    if (SGHidden(SGKeyHideSocialProof) && listed(key, socialProofFlags, sizeof(socialProofFlags) / sizeof(socialProofFlags[0]))) return YES;
     return SGHidden(SGKeyHideUpsells) && listed(key, upsellFlags, sizeof(upsellFlags) / sizeof(upsellFlags[0]));
 }
 

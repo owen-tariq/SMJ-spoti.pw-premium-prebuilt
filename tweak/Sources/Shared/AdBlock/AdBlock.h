@@ -12,7 +12,6 @@
 #define SGKeyHideUpsells @"spotifyglass.adblock.upsells"
 #define SGKeyFakePremium @"spotifyglass.adblock.premium"
 #define SGKeyHideSearchVideos @"spotifyglass.adblock.searchVideos"
-#define SGKeyHideSocialProof @"spotifyglass.adblock.socialProof"
 
 // What a switch turning Spoof Premium on is told first.
 extern NSString *const SGFakePremiumWarning;

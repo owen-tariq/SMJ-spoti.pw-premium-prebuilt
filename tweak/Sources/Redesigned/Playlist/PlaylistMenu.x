@@ -303,11 +303,14 @@ static UITableView *tableIn(UIView *root, int depth) {
 // had been opened and closed a few times (device 2026-09-20). The walk is the page's live views, which is
 // the cells on screen and no more, and it is done once per sheet.
 static UIView *curationIn(UIView *page) {
-    UIView *held = objc_getAssociatedObject(page, &kToolbarKey);
-    if (held) return held;
     UIView *found = SGRFindByIdentifier(page, SGRPlaylistCurationIdentifier, NULL);
-    if (found) objc_setAssociatedObject(page, &kToolbarKey, found, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    return found;
+    if (found) {
+        if (found != objc_getAssociatedObject(page, &kToolbarKey)) {
+            objc_setAssociatedObject(page, &kToolbarKey, found, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+        return found;
+    }
+    return objc_getAssociatedObject(page, &kToolbarKey);
 }
 
 // The page this sheet belongs to, decided once and only from the ⋯ that opened it. What the page has to

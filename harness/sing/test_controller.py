@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the production lifecycle at deterministic boundaries on an already booted iOS 27 simulator."""
+"""Run the production lifecycle at deterministic boundaries on an already booted iOS 18 simulator."""
 import argparse
 from pathlib import Path
 import subprocess
@@ -11,7 +11,7 @@ here = Path(__file__).resolve().parent
 src = here.parent.parent / "tweak/Sources"
 out = here / "build/controller-test"
 out.parent.mkdir(exist_ok=True)
-command = ["xcrun", "--sdk", "iphonesimulator", "clang", "-target", "arm64-apple-ios27.0-simulator",
+command = ["xcrun", "--sdk", "iphonesimulator", "clang", "-target", "arm64-apple-ios18.0-simulator",
            "-fobjc-arc", "-g", "-O1", "-Wall", "-Werror", "-Wno-deprecated-declarations", "-I", str(src),
            str(here / "controller_test.m")]
 command += [str(src / "Shared/Sing" / name) for name in

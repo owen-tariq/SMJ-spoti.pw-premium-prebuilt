@@ -265,11 +265,11 @@ static const NSUInteger kFadeStops = 7;
     _fade = [CAGradientLayer layer];
     NSNull *off = NSNull.null;
     _fade.actions = @{@"bounds": off, @"position": off, @"frame": off};
-    // Clear to black on a smoothstep, so there is no edge where it starts.
+    // Fade to half black on a smoothstep, so there is no edge where it starts.
     NSMutableArray *colors = [NSMutableArray array], *locations = [NSMutableArray array];
     for (NSUInteger i = 0; i < kFadeStops; i++) {
         CGFloat t = (CGFloat)i / (kFadeStops - 1);
-        [colors addObject:(id)[UIColor colorWithWhite:0 alpha:t * t * (3 - 2 * t)].CGColor];
+        [colors addObject:(id)[UIColor colorWithWhite:0 alpha:0.5 * t * t * (3 - 2 * t)].CGColor];
         [locations addObject:@(t)];
     }
     _fade.colors = colors;

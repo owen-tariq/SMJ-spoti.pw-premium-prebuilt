@@ -57,6 +57,11 @@ void SGRPlayerSetCoverHidden(BOOL hidden);
 
 #pragma mark - the lyrics in the player (PlayerLyrics.x)
 
+// Allow the lyrics screen to rotate into its two-column landscape layout.
+#define SGRKeyLandscapeLyrics @"spotifyglass.redesign.landscapeLyrics"
+void SGRPlayerLyricsOrientationChanged(void);
+void SGRPlayerForceLandscapeLyrics(void);
+
 // Whether the playing track has lyrics the player can show.
 BOOL SGRPlayerLyricsAvailable(void);
 // Whether the player is showing them.

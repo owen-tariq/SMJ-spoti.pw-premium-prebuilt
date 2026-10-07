@@ -24,6 +24,7 @@ static const SGDSPNumberKey kNumbers[] = {
     {SGKeyDSPBassGain,          {1, 15, 6, 0.5}},
     {SGKeyDSPConvolverMode,     {0, 2, 0, 1}},
     {SGKeyDSPReverbPreset,      {0, 8, 5, 1}},     // Plate
+    {SGKeyDSPReverbAmount,      {0, 100, 0, 1}},
     {SGKeyDSPStereoWideLevel,   {0, 100, 60, 1}},
     {SGKeyDSPCrossfeedMode,     {0, 2, 2, 1}},     // libbs2b's own default
     {SGKeyDSPTubeDrive,         {0, 18, 4, 0.5}},
@@ -76,6 +77,9 @@ BOOL SGDSPSwitch(NSString *key) {
 }
 
 void SGDSPSetSwitch(NSString *key, BOOL on) {
+    if (on && [key isEqualToString:SGKeyDSPReverb] && SGDSPNumber(SGKeyDSPReverbAmount) == 0) {
+        [store() setDouble:SGDSPRangeFor(SGKeyDSPReverbAmount).max forKey:SGKeyDSPReverbAmount];
+    }
     SGSetEnabled(key, on);
     SGDSPApply(SGDSPEffectOf(key));
 }
@@ -91,6 +95,16 @@ void SGDSPSetNumber(NSString *key, double value) {
     SGDSPRange range = SGDSPRangeFor(key);
     [store() setDouble:MAX(range.min, MIN(range.max, value)) forKey:key];
     SGDSPApply(SGDSPEffectOf(key));
+}
+
+void SGDSPSetReverbAmount(double amount) {
+    SGDSPRange range = SGDSPRangeFor(SGKeyDSPReverbAmount);
+    amount = MAX(range.min, MIN(range.max, amount));
+    [store() setDouble:amount forKey:SGKeyDSPReverbAmount];
+    SGSetEnabled(SGKeyDSPReverb, amount > 0);
+    if (amount > 0) SGSetEnabled(SGKeyDSP, YES);
+    if (amount > 0) SGDSPApply(SGKeyDSP);
+    SGDSPApply(SGKeyDSPReverb);
 }
 
 NSString *SGDSPString(NSString *key) {

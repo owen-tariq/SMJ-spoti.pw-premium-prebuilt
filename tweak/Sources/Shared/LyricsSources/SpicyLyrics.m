@@ -3,29 +3,86 @@
 // live cut of the song by mistake; unlike Musixmatch, what it has is Apple Music's syllable timing,
 // down to the backing vocals and the two sides of a duet.
 //
-// Two things about it are like nothing else here. It answers no one who cannot show they are a
-// signed-in Spotify client, so the request carries the same Authorization header Spotify's own
-// requests carry — the account's own access token. That is more than any other source is told, which
-// is why the Lyrics page says so plainly and why this source, like the rest, is off until you turn it
-// on. And it answers in a packed shape rather than plain JSON: every distinct value in the document
-// once, then a stream of opcodes rebuilding it. unpack() below puts it back together.
+// Its Developer Platform API returns the best sync from its catalogue and names the provider it
+// chose. The user supplies a publishable client key; it is kept in Keychain, never in preferences.
 #import "Core/SGCore.h"
+#import "Settings/SGModPage.h"
 #import "LyricsSources.h"
 #import "Shared/Lyrics/Lyrics.h"
+#import <Security/Security.h>
 
-static NSString *const kAPI = @"https://api.spicylyrics.org/query";
-// The header the token rides in. The request names it in the query's variables as well, which is how
-// the server is told which of the headers it accepts this caller is using.
-static NSString *const kAuthHeader = @"SpicyLyrics-WebAuth";
-// The extension release this file was written against. The server reads it to tell old clients from
-// new, so it moves when the shapes read below do.
-static NSString *const kClientVersion = @"6.3.20";
-// Only one query goes out per ask, and the reply names its answers by the index they came in at.
-static NSString *const kOperationID = @"0";
+static NSString *const kAPI = @"https://api.spicylyrics.org/v1/lyrics";
+static NSString *const kKeychainService = @"pw.spoti.spotifyglass.spicylyrics";
+static NSString *const kKeychainAccount = @"publishable-client-key";
+
+NSString *SGSpicyLyricsAPIKey(void) {
+    NSDictionary *query = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService: kKeychainService,
+        (__bridge id)kSecAttrAccount: kKeychainAccount,
+        (__bridge id)kSecReturnData: @YES,
+        (__bridge id)kSecMatchLimit: (__bridge id)kSecMatchLimitOne,
+    };
+    CFTypeRef result = NULL;
+    if (SecItemCopyMatching((__bridge CFDictionaryRef)query, &result) != errSecSuccess || !result) return nil;
+    NSData *data = CFBridgingRelease(result);
+    NSString *key = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    return [key hasPrefix:@"sl_pk_"] ? key : nil;
+}
+
+static BOOL storeSpicyLyricsAPIKey(NSString *key) {
+    NSDictionary *query = @{
+        (__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecAttrService: kKeychainService,
+        (__bridge id)kSecAttrAccount: kKeychainAccount,
+    };
+    SecItemDelete((__bridge CFDictionaryRef)query);
+    if (!key.length) return YES;
+    NSMutableDictionary *item = [query mutableCopy];
+    item[(__bridge id)kSecValueData] = [key dataUsingEncoding:NSUTF8StringEncoding];
+    item[(__bridge id)kSecAttrAccessible] = (__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly;
+    return SecItemAdd((__bridge CFDictionaryRef)item, NULL) == errSecSuccess;
+}
+
+static void spicyKeyNotice(NSString *title, NSString *message) {
+    UIAlertController *notice = [UIAlertController alertControllerWithTitle:title message:message preferredStyle:UIAlertControllerStyleAlert];
+    [notice addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleCancel handler:nil]];
+    [SGTopController() presentViewController:notice animated:YES completion:nil];
+}
+
+SGModRow *SGSpicyLyricsAPIKeyRow(void) {
+    return SGStatActionRow(@"Spicy Lyrics API key", @"Use a publishable sl_pk_ key; enable native no-Origin access", ^NSString *{
+        return SGSpicyLyricsAPIKey().length ? @"Set" : @"Not set";
+    }, ^{
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Spicy Lyrics API key"
+            message:@"Create a publishable client key in the Spicy Lyrics Developer Platform and enable its native-client no-Origin access. Do not use a secret sl_sk_ key in a distributed app."
+            preferredStyle:UIAlertControllerStyleAlert];
+        [alert addTextFieldWithConfigurationHandler:^(UITextField *field) {
+            field.placeholder = @"sl_pk_…";
+            field.secureTextEntry = YES;
+            field.text = SGSpicyLyricsAPIKey();
+            field.autocorrectionType = UITextAutocorrectionTypeNo;
+            field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        }];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Remove key" style:UIAlertActionStyleDestructive handler:^(UIAlertAction *action) {
+            storeSpicyLyricsAPIKey(nil);
+        }]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+        [alert addAction:[UIAlertAction actionWithTitle:@"Save" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            NSString *key = [alert.textFields.firstObject.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            if (![key hasPrefix:@"sl_pk_"] || key.length <= 6) {
+                spicyKeyNotice(@"Invalid client key", @"Enter a publishable Spicy Lyrics key beginning with sl_pk_.");
+                return;
+            }
+            if (!storeSpicyLyricsAPIKey(key)) spicyKeyNotice(@"Could not save key", @"Keychain rejected the Spicy Lyrics key.");
+        }]];
+        [SGTopController() presentViewController:alert animated:YES completion:nil];
+    });
+}
 
 #pragma mark - the packed shape
 
-// A reply is [values, stream]: every distinct string, number, boolean and null in the document, and
+// Legacy packed replies use [values, stream]: every distinct string, number, boolean and null in the document, and
 // a stream of integers rebuilding it. A number at or above zero is an index into the values; below
 // zero it opens a structure. Straight from the extension's own packer, which is the only writer of
 // this shape there is.
@@ -298,78 +355,31 @@ static NSString *shapeOf(NSDictionary *document) {
 
 #pragma mark - the source
 
-// The API answers a browser. The extension runs inside Spotify's desktop client, which is Chromium,
-// and the server reads the identity Chromium puts on every request by itself — none of which a
-// native URLSession sends. Without it the reply is the plain-text tier rather than Apple Music's
-// syllables, which is why hundreds of tracks came back Type=Static.
-//
-// Spicy Lyrics' author was asked directly (2026-09-20) and allowed the mod to present itself this
-// way, on the one condition that it stays open source, which spoti.pw is. He said he would not add a
-// client of his own for us, and that this is the way, as EeveeSpotify already does it.
-static NSDictionary<NSString *, NSString *> *desktopClient(void) {
-    return @{
-        @"Origin": @"https://xpui.app.spotify.com",
-        @"Referer": @"https://xpui.app.spotify.com/",
-        @"User-Agent": @"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/146.0.7680.179 Spotify/1.2.92.148 Safari/537.36",
-        @"sec-ch-ua": @"\"Not-A.Brand\";v=\"24\", \"Chromium\";v=\"146\"",
-        @"sec-ch-ua-mobile": @"?0",
-        @"sec-ch-ua-platform": @"\"Windows\"",
-        @"sec-fetch-site": @"cross-site",
-        @"sec-fetch-mode": @"cors",
-        @"sec-fetch-dest": @"empty",
-        @"Accept": @"*/*",
-        @"Accept-Language": @"en-Latn-US,en-US;q=0.9,en-Latn;q=0.8,en;q=0.7",
-        @"priority": @"u=1, i",
-        // Accept-Encoding is deliberately left to NSURLSession, which asks for what it can actually
-        // decode. Claiming br and zstd as the browser does risks a body nothing here can read.
-    };
-}
-
+// Uses the official Developer Platform API and a user-supplied publishable key. Secret keys never
+// ship in this client; the API's native-client no-Origin option must be enabled for the key.
 SGLyricsAsk SGSpicyLyricsAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResult *result)) {
-    NSString *authorization = SGKaraokeSpotifyAuthorization();
-    if (!query.trackID.length || !authorization.length) {
-        SGLog(@"spicy: nothing to ask with for %@%@", query.trackID,
-              authorization.length ? @"" : @", no request of Spotify's own seen yet to borrow the token from");
+    NSString *key = SGSpicyLyricsAPIKey();
+    if (!query.trackID.length || !key.length) {
+        SGLog(@"spicy: no request for %@%@", query.trackID, key.length ? @"" : @", client key not configured");
         done(nil);
         return;
     }
-    NSDictionary *body = @{
-        @"queries": @[@{@"operation": @"lyrics", @"variables": @{@"id": query.trackID, @"auth": kAuthHeader}}],
-        @"client": @{@"version": kClientVersion},
-    };
-    NSURL *url = [NSURL URLWithString:kAPI];
-    NSMutableDictionary<NSString *, NSString *> *headers = [desktopClient() mutableCopy];
-    headers[@"X-mode"] = @"2";   // answer in the packed shape unpack() reads
-    headers[@"SpicyLyrics-Version"] = kClientVersion;
-    headers[kAuthHeader] = authorization;   // already a "Bearer ..." of Spotify's own making
-    SGLyricsPostJSON(url, headers, body, ^(id root) {
-        NSDictionary *job = nil;
-        for (id raw in arrayIn(dictionaryIn(root)[@"queries"]) ?: @[]) {
-            if ([dictionaryIn(raw)[@"operationId"] isEqual:kOperationID]) {
-                job = raw;
-                break;
-            }
-        }
-        NSDictionary *answer = dictionaryIn(job[@"result"]);
-        NSInteger status = [answer[@"httpStatus"] integerValue];
-        if (!answer) {
-            SGLog(@"spicy: no answer to the query for %@", query.trackID);
+    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@/%@", kAPI, query.trackID]];
+    NSDictionary *headers = @{@"Authorization": [@"Bearer " stringByAppendingString:key], @"Accept": @"application/json"};
+    SGLyricsGetJSON(url, headers, ^(id root) {
+        NSDictionary *envelope = dictionaryIn(root);
+        NSInteger status = [envelope[@"Status"] integerValue];
+        if (status && status != 200) {
+            SGLog(@"spicy: %@ API status %ld", query.trackID, (long)status);
             done(nil);
             return;
         }
-        // The query's own status rides inside an envelope that is a 200 either way, so the walk is
-        // told here about a server too busy to answer: a 503 means the lyrics are being prepared and
-        // a later ask will have them, which must not stick to the track as "this one has none".
-        if (status == 429 || status >= 500) {
-            SGLyricsNoteReply([[NSHTTPURLResponse alloc] initWithURL:url statusCode:status HTTPVersion:nil headerFields:nil], nil);
-        }
-        if (status != 200) {
-            SGLog(@"spicy: %@ answered %ld", query.trackID, (long)status);
+        NSDictionary *document = dictionaryIn(unpack(envelope[@"Body"] ?: envelope));
+        if (!document) {
+            SGLog(@"spicy: %@ returned no document", query.trackID);
             done(nil);
             return;
         }
-        NSDictionary *document = dictionaryIn(unpack(answer[@"data"]));
         SGLog(@"spicy: %@ came back as %@", query.trackID, shapeOf(document));
         NSString *type = [document[@"Type"] isKindOfClass:NSString.class] ? document[@"Type"] : nil;
         NSArray *content = arrayIn(document[@"Content"]);
@@ -401,6 +411,13 @@ SGLyricsAsk SGSpicyLyricsAsk = ^(SGLyricsQuery *query, void (^done)(SGLyricsResu
             result.texts = texts;
             result.karaokeLines = SGKaraokeStaticLines(texts);
         }
+        NSString *source = [document[@"source"] isKindOfClass:NSString.class] ? document[@"source"] : nil;
+        NSDictionary<NSString *, NSString *> *sourceNames = @{
+            @"spicy_lyrics": @"Spicy Lyrics",
+            @"apple_music": @"Apple Music",
+            @"spotify": @"Spotify",
+        };
+        result.provider = sourceNames[source] ?: @"Spicy Lyrics";
         if (!result.texts.count) {
             SGLog(@"spicy: %@ came back as %@ with nothing the page could show", query.trackID, type ?: @"no shape at all");
             done(nil);

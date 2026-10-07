@@ -97,6 +97,12 @@ static NSDictionary *withLine(NSDictionary *info, NSString *line, double elapsed
     return shown;
 }
 
+static NSDictionary *withElapsed(NSDictionary *info, double elapsed) {
+    NSMutableDictionary *shown = [info mutableCopy];
+    shown[MPNowPlayingInfoPropertyElapsedPlaybackTime] = @(elapsed);
+    return shown;
+}
+
 static void tick(void) {
     NSDictionary *info;
     CFAbsoluteTime reportedAt;
@@ -111,7 +117,7 @@ static void tick(void) {
     if (line == sg_shownLine || [line isEqualToString:sg_shownLine]) return;
     sg_shownLine = line;
     sg_resending = YES;
-    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = line ? withLine(info, line, elapsed) : info;
+    MPNowPlayingInfoCenter.defaultCenter.nowPlayingInfo = line ? withLine(info, line, elapsed) : withElapsed(info, elapsed);
     sg_resending = NO;
 }
 

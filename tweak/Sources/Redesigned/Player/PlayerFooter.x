@@ -42,6 +42,22 @@ static const CGFloat kControlsShare = 0.3;
 static char kConnectKey, kShareKey, kTrimmerKey, kQueueKey, kLyricsGlyphKey, kReachKey;
 static __weak SGRGlyphButton *sg_lyricsGlyph;
 
+@interface SGRLandscapeLyricsHold : NSObject <UIGestureRecognizerDelegate>
+- (void)held:(UILongPressGestureRecognizer *)gesture;
+@end
+
+@implementation SGRLandscapeLyricsHold
+- (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gesture {
+    return SGRedesignedUI();
+}
+
+- (void)held:(UILongPressGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateBegan) SGRPlayerForceLandscapeLyrics();
+}
+@end
+
+static SGRLandscapeLyricsHold *sg_landscapeLyricsHold;
+
 // The view the footer's stack view arranges around `view`.
 static UIView *arrangedAround(UIView *view, UIView *host) {
     for (UIView *v = view; v && v != host; v = v.superview) {
@@ -91,6 +107,12 @@ static SGRGlyphButton *lyricsGlyphIn(UIView *host) {
         glyph = [SGRGlyphButton buttonWithSymbol:kLyricsSymbol pointSize:kLyricsGlyphSize title:@"Lyrics"];
         glyph.glyph.tintColor = SGRSecondary();
         glyph.onTap = ^{ SGRPlayerToggleLyrics(); };
+        if (!sg_landscapeLyricsHold) sg_landscapeLyricsHold = [SGRLandscapeLyricsHold new];
+        UILongPressGestureRecognizer *landscape = [[UILongPressGestureRecognizer alloc] initWithTarget:sg_landscapeLyricsHold action:@selector(held:)];
+        landscape.minimumPressDuration = 0.55;
+        landscape.cancelsTouchesInView = YES;
+        landscape.delegate = sg_landscapeLyricsHold;
+        [glyph addGestureRecognizer:landscape];
         objc_setAssociatedObject(host, &kLyricsGlyphKey, glyph, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     if (glyph.superview != host) [host addSubview:glyph];

@@ -1,3 +1,4 @@
+#import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "AdBlock.h"
 #import "Shared/Privacy/Privacy.h"
@@ -51,14 +52,16 @@ UIViewController *SGAdsSettingsPage(void) {
     SGModRow *fakePremium = SGOptionRow(@"Spoof Premium", nil, SGKeyFakePremium);
     fakePremium.warning = SGFakePremiumWarning;
 
+    NSMutableArray<SGModRow *> *ads = [NSMutableArray arrayWithArray:@[
+        SGWithSymbol(SGOptionRow(@"Hide ads", nil, SGKeyHideAds), @"speaker.slash"),
+        SGWithSymbol(SGOptionRow(@"Hide upsells", nil, SGKeyHideUpsells), @"hand.raised"),
+    ]];
+    if (!SGRedesignedUIStored())
+        [ads addObject:SGWithSymbol(SGOptionRow(@"Hide the video carousel in Search", nil, SGKeyHideSearchVideos), @"play.rectangle.on.rectangle")];
+    [ads addObject:SGWithSymbol(SGPageRow(@"Ad and upsell flags", ^UIViewController *{ return adFlagsPage(); }), @"flag")];
+
     return [[SGModPage alloc] initWithTitle:@"Premium, ads & privacy" intro:SGRestartNote sections:@[
-        SGNotedSection(@"Ads", @[
-            SGWithSymbol(SGOptionRow(@"Hide ads", nil, SGKeyHideAds), @"speaker.slash"),
-            SGWithSymbol(SGOptionRow(@"Hide upsells", nil, SGKeyHideUpsells), @"hand.raised"),
-            SGWithSymbol(SGOptionRow(@"Hide the video carousel in Search", nil, SGKeyHideSearchVideos), @"play.rectangle.on.rectangle"),
-            SGWithSymbol(SGOptionRow(@"Hide social proof in Search", nil, SGKeyHideSocialProof), @"person.2"),
-            SGWithSymbol(SGPageRow(@"Ad and upsell flags", ^UIViewController *{ return adFlagsPage(); }), @"flag"),
-        ], @"Audio ads between songs need Spoof Premium."),
+        SGNotedSection(@"Ads", ads, @"Audio ads between songs need Spoof Premium."),
         SGNotedSection(@"Premium", @[
             SGWithSymbol(fakePremium, @"crown"),
         ], @"Free accounts only."),

@@ -55,6 +55,7 @@
 
 #define SGKeyDSPReverb                  @"spotifyglass.dsp.reverb"
 #define SGKeyDSPReverbPreset            @"spotifyglass.dsp.reverb.preset"       // SGDSPReverbPresetNames index
+#define SGKeyDSPReverbAmount            @"spotifyglass.dsp.reverb.amount"       // percent of the preset's wet mix
 
 #define SGKeyDSPStereoWide              @"spotifyglass.dsp.wide"
 #define SGKeyDSPStereoWideLevel         @"spotifyglass.dsp.wide.level"          // percent, 50 leaving the width as it is
@@ -79,6 +80,7 @@ BOOL SGDSPSwitch(NSString *key);
 void SGDSPSetSwitch(NSString *key, BOOL on);
 double SGDSPNumber(NSString *key);
 void SGDSPSetNumber(NSString *key, double value);
+void SGDSPSetReverbAmount(double amount);
 NSString *SGDSPString(NSString *key);
 void SGDSPSetString(NSString *key, NSString *value);
 

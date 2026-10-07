@@ -153,7 +153,7 @@ NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void) {
             return provider;
         };
         all = @[
-            make(@"spicylyrics", @"Spicy Lyrics", @"Syllable timing, uses your Spotify token", SGSpicyLyricsAsk),
+            make(@"spicylyrics", @"Spicy Lyrics", @"Syllable timing, your Developer Platform client key", SGSpicyLyricsAsk),
             make(@"binilyrics", @"BiniLyrics", @"Apple Music word timing", SGBiniLyricsAsk),
             make(@"musixmatch", @"Musixmatch", @"Spotify's licensed catalogue", SGMusixmatchAsk),
             make(@"unison", @"Unison", @"Hand-timed, few tracks", SGUnisonAsk),
@@ -373,13 +373,13 @@ static void step(SGLyricsWalk *walk) {
         if (betterLines(merged, fresh)) {
             merged.karaokeLines = fresh.karaokeLines;
             merged.wordTimed = fresh.wordTimed;
-            merged.provider = provider.name;
+            merged.provider = fresh.provider ?: provider.name;
         }
         if (betterTexts(merged, fresh)) {
             merged.starts = fresh.starts;
             merged.texts = fresh.texts;
             merged.synced = fresh.synced;
-            if (!merged.provider) merged.provider = provider.name;
+            if (!merged.provider) merged.provider = fresh.provider ?: provider.name;
         }
         step(walk);
     });

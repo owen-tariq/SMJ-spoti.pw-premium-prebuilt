@@ -9,6 +9,8 @@
 #import <UIKit/UIKit.h>
 #import "Shared/Lyrics/Lyrics.h"
 
+@class SGModRow;
+
 // The sources in the order they are asked, as their keys. Unset means the order below, so a source
 // added in a later version joins the end of everyone's list instead of shuffling it.
 #define SGKeyLyricsProviders @"spotifyglass.lyricsProviders"
@@ -129,5 +131,7 @@ extern SGLyricsAsk SGUnisonAsk;
 extern SGLyricsAsk SGNetEaseAsk;
 extern SGLyricsAsk SGLrcLibAsk;
 extern SGLyricsAsk SGSpicyLyricsAsk;
+NSString *SGSpicyLyricsAPIKey(void);
+SGModRow *SGSpicyLyricsAPIKeyRow(void);
 
 UIViewController *SGLyricsSourcesPage(void);   // the ordered list on the Lyrics page

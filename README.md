@@ -2,9 +2,9 @@
   <img src="docs/icon.png" width="96" alt="">
 </p>
 
-<h1 align="center">spoti.pw pro</h1>
+<h1 align="center">taurus.</h1>
 
-<p align="center">Spotify, in glass.</p>
+<p align="center">FOSS fork of chroma.pw</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/iOS-000000?style=for-the-badge&logo=ios&logoColor=white" alt="iOS">
@@ -15,7 +15,6 @@
 </p>
 
 <p align="center">
-  <a href="https://spoti.pw">spoti.pw</a> ·
   <a href="#build-it">Build it</a> ·
   <a href="docs/tweaks.md">Hack on it</a> ·
   <a href="https://ko-fi.com/darkksh">Support</a>
@@ -30,7 +29,7 @@
   <img src="docs/screenshots/home.webp" width="16%" alt="Home">
 </p>
 
-(Injected with Premium by samj.)
+This project is made by me and it is a fork of chroma.pw before it was closed source - updated with the newest features. Below is the original projects readme:
 
 A no-jailbreak Theos tweak that rebuilds Spotify for iOS in Liquid Glass, injected into your own
 decrypted IPA and signed with your own certificate.

@@ -2,7 +2,7 @@
 
 Sing turns a song's vocals down, anywhere from 20 to 100 %, while Spotify plays it, from the
 redesigned player's lyrics. The vocals are separated on the iPhone by a Core ML export of
-Mel-Band RoFormer; no audio leaves the phone. It needs iOS 27.
+Mel-Band RoFormer; no audio leaves the phone. It needs iOS 18.
 
 ## Audio and model integration
 
@@ -119,7 +119,7 @@ and a two-minute regression holds inference at 1.3 seconds, as observed on a war
 every original sample through preparation and every reduced sample after activation.
 
 The controller test runs the real lifecycle and stream with deterministic player, worker and
-AudioUnit boundaries on an iOS 27 simulator: thermal gating and recovery, drain before retry,
+AudioUnit boundaries on an iOS 18 simulator: thermal gating and recovery, drain before retry,
 worker completion before the polling timer, model retention, cancellation while loading,
 preparing while paused before an audio graph exists, waiting a bounded time for the graph after
 Play, keeping 70 % through a loading/track transition, continuing the expected next track and
@@ -201,7 +201,7 @@ The model is not in the IPA. In the redesigned look, **Mod Settings → Karaoke*
 has Sing's switch, which puts the microphone in the player's lyrics and takes it away at once (off,
 Sing does no work), and the voice model's row: Not downloaded, Downloading 43 % · 210 of 467 MB with
 a bar under it and Cancel download, Checking…, Downloaded · 467 MB with Remove voice model, or
-Paused / Download failed, whose tap says why. Below iOS 27 the section is a "Needs iOS 27" row.
+Paused / Download failed, whose tap says why. Below iOS 18 the section is a "Needs iOS 18" row.
 
 `Shared/Sing/SGSingModel.m` downloads the five files of `separator.mlmodelc` one by one from
 `https://huggingface.co/Darkkos/spoti-sing/resolve/main/<path>` (no archive: iOS has no public

@@ -60,7 +60,7 @@ exported for Core ML with two-second windows: a float32 `spectrum` of shape `[1,
 `vocals_spectrum` of the same shape out, the STFT around it done by the app. Normalization, attention,
 softmax and matrix products are float32, the rest float16. The files are a compiled `separator.mlmodelc`
 as they are: the app downloads each one and keeps it only if its size and SHA-256 are the ones it pins.
-It needs iOS 27, and no audio leaves the phone.
+It needs iOS 18, and no audio leaves the phone.
 
 | File | Bytes | SHA-256 |
 | --- | ---: | --- |
