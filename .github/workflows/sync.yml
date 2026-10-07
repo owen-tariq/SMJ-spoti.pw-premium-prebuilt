@@ -1,21 +1,68 @@
-name: Sync Upstream
+name: Sync + Build (Auto)
 
 on:
   schedule:
-    - cron: "0 0 * * *" # Runs daily at midnight UTC
+    - cron: "0 */6 * * *"   # Check every 6 hours
   workflow_dispatch:
+    inputs:
+      force_build:
+        description: "Force build even if no new upstream changes"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
 
 permissions:
   contents: write
   actions: write
 
 jobs:
-  sync:
+  # ─────────────────────────────────────────────
+  # 1. CHECK: Is there a new version upstream?
+  # ─────────────────────────────────────────────
+  check:
     runs-on: ubuntu-latest
     outputs:
-      updated: ${{ steps.push.outputs.updated }}
+      should_build: ${{ steps.compare.outputs.should_build }}
+      og_version: ${{ steps.compare.outputs.og_version }}
     steps:
-      - name: Checkout
+      - name: Checkout my repo
+        uses: actions/checkout@v4
+        with:
+          ref: crack
+          fetch-depth: 0
+          token: ${{ secrets.PAT }}
+
+      - name: Get upstream latest version
+        id: compare
+        run: |
+          # Fetch latest release tag from the OG repo
+          OG_VERSION=$(curl -s https://api.github.com/repos/skopevoj/spoti.pw/releases/latest | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+          echo "OG latest version: $OG_VERSION"
+          echo "og_version=$OG_VERSION" >> $GITHUB_OUTPUT
+
+          # Read what version we last built (stored in .last-built-version file)
+          MY_LAST=$(cat .last-built-version 2>/dev/null || echo "none")
+          echo "My last built version: $MY_LAST"
+
+          FORCE="${{ inputs.force_build }}"
+          if [ "$OG_VERSION" != "$MY_LAST" ] || [ "$FORCE" = "true" ]; then
+            echo "New version detected or forced! Will sync and build."
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "Already up to date at $MY_LAST. Skipping."
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          fi
+
+  # ─────────────────────────────────────────────
+  # 2. SYNC: Merge OG repo changes into crack branch
+  # ─────────────────────────────────────────────
+  sync:
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout my repo
         uses: actions/checkout@v4
         with:
           ref: crack
@@ -27,48 +74,123 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Add Upstream and Fetch
+      - name: Merge upstream changes
         run: |
           git remote add upstream https://github.com/skopevoj/spoti.pw.git
           git fetch upstream
+          git merge upstream/main --no-edit || {
+            git merge --abort
+            echo "::error::Merge conflict with upstream/main — manual resolution required"
+            exit 1
+          }
 
-      - name: Merge Upstream Main
+      - name: Update last-built-version tracker
         run: |
-          git merge upstream/main --no-edit || { git merge --abort; echo "::error::Merge conflict with upstream/main — manual resolution required"; exit 1; }
+          echo "${{ needs.check.outputs.og_version }}" > .last-built-version
+          git add .last-built-version
+          git diff --staged --quiet || git commit -m "chore: track upstream ${{ needs.check.outputs.og_version }}"
 
-      - name: Merge Upstream Beta
-        run: |
-          git merge upstream/beta --no-edit || { git merge --abort; echo "::error::Merge conflict with upstream/beta — manual resolution required"; exit 1; }
+      - name: Push
+        run: git push origin crack
 
-      - name: Push Changes
-        id: push
+  # ─────────────────────────────────────────────
+  # 3. BUILD: Compile tweak → DEB + IPA, publish to Releases
+  # ─────────────────────────────────────────────
+  build:
+    needs: [check, sync]
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: macos-latest
+    env:
+      THEOS: ${{ github.workspace }}/theos
+    steps:
+      - name: Checkout my repo (crack branch)
+        uses: actions/checkout@v4
+        with:
+          ref: crack
+
+      - name: Setup Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Checkout Theos
+        uses: actions/checkout@v5
+        with:
+          repository: theos/theos
+          path: theos
+          submodules: recursive
+
+      - name: Install build tools
         run: |
-          if git diff --quiet origin/crack HEAD; then
-            echo "No new upstream changes."
-            echo "updated=false" >> $GITHUB_OUTPUT
+          brew install make dpkg ldid
+          python3 -m pip install --break-system-packages git+https://github.com/asdfzxcvbn/pyzule-rw.git
+
+      - name: Download decrypted Spotify IPA
+        env:
+          IPA_URL: ${{ secrets.IPA_URL }}
+        run: |
+          if [ -z "$IPA_URL" ]; then
+            echo "::error::IPA_URL secret is not set."
+            exit 1
+          fi
+          mkdir -p ipa
+          echo "Downloading IPA..."
+          curl -fsSL "$IPA_URL" -o ipa/spotify.ipa
+          case "$(file --mime-type -b ipa/spotify.ipa)" in
+            application/zip|application/x-ios-app) echo "IPA verified OK" ;;
+            *) echo "::error::Downloaded file is not a valid IPA"; exit 1 ;;
+          esac
+
+      - name: Flag table (from secret)
+        env:
+          SG_FLAG_LIST: ${{ secrets.SG_FLAG_LIST }}
+        run: |
+          if [ -n "$SG_FLAG_LIST" ]; then
+            echo "$SG_FLAG_LIST" | base64 -d | gunzip > tweak/Sources/Shared/Flags/SGFlagList.m
+            echo "Flag table restored from secret."
           else
-            git push origin crack
-            echo "updated=true" >> $GITHUB_OUTPUT
+            echo "SG_FLAG_LIST not set — will be extracted from IPA at build time."
           fi
 
-  build-ipa:
-    needs: sync
-    if: needs.sync.outputs.updated == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Trigger IPA Build
-        uses: actions/github-script@v7
+      - name: Build tweak (produces .deb)
+        run: env -u MAKELEVEL gmake -C tweak clean package
+
+      - name: Build full IPA (injects tweak into Spotify)
+        run: make release
+
+      - name: Get version info
+        id: version
+        run: |
+          MOD_VER=$(cat version.txt | tr -d '[:space:]')
+          SPOTIFY_VER=$(unzip -p ipa/spotify.ipa "$(unzip -Z1 ipa/spotify.ipa | grep -oE '^Payload/[^/]+\.app/' | head -1)Info.plist" | plutil -extract CFBundleShortVersionString raw -o - -)
+          TAG="v${MOD_VER}-spotify${SPOTIFY_VER}"
+          echo "mod_ver=$MOD_VER" >> $GITHUB_OUTPUT
+          echo "spotify_ver=$SPOTIFY_VER" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Built: spoti.pw $MOD_VER on Spotify $SPOTIFY_VER → tag $TAG"
+
+      - name: Publish DEB + IPA to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          github-token: ${{ secrets.PAT }}
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'build-ipa.yml',
-              ref: 'crack',
-              inputs: {
-                ipa_url: '${{ secrets.IPA_URL }}',
-                upload_method: 'both'
-              }
-            });
-            console.log('IPA build triggered successfully!');
+          token: ${{ secrets.PAT }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Spotify++ ${{ steps.version.outputs.mod_ver }} (Spotify ${{ steps.version.outputs.spotify_ver }})"
+          body: |
+            ## What's new
+            Synced from [spoti.pw ${{ needs.check.outputs.og_version }}](https://github.com/skopevoj/spoti.pw/releases/tag/${{ needs.check.outputs.og_version }}) with custom modifications.
+
+            | | Version |
+            |---|---|
+            | 🔧 Tweak | `${{ steps.version.outputs.mod_ver }}` |
+            | 🎵 Spotify | `${{ steps.version.outputs.spotify_ver }}` |
+
+            ### Install
+            - **IPA** → Sideloadly, AltStore, Feather, or TrollStore
+            - **DEB** → Sileo / Zebra (jailbroken)
+
+            > Built automatically when [skopevoj/spoti.pw](https://github.com/skopevoj/spoti.pw) released a new version.
+          files: |
+            out/*.ipa
+            tweak/packages/*.deb
+          make_latest: true
+          prerelease: false
