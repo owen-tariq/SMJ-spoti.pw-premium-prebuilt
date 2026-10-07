@@ -1,12 +1,18 @@
-name: Sync + Build (Auto)
+name: Auto Sync + Build + Release
+
+# Triggered every 6 hours, or manually.
+# Checks if skopevoj/spoti.pw has published a NEW RELEASE.
+# If yes: merges the new code (keeping your samj mods), builds the
+# .deb tweak AND a patched .ipa, then publishes both to your Releases page.
+# The Spotify IPA (stored as IPA_URL secret) stays fixed — only the tweak updates.
 
 on:
   schedule:
-    - cron: "0 */6 * * *"   # Check every 6 hours
+    - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
       force_build:
-        description: "Force build even if no new upstream changes"
+        description: "Force build even if already up to date"
         required: false
         default: "false"
         type: choice
@@ -14,55 +20,63 @@ on:
 
 permissions:
   contents: write
-  actions: write
 
 jobs:
-  # ─────────────────────────────────────────────
-  # 1. CHECK: Is there a new version upstream?
-  # ─────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────────
+  # STEP 1 — Check if the OG repo has a new release
+  # ──────────────────────────────────────────────────────────────
   check:
     runs-on: ubuntu-latest
     outputs:
-      should_build: ${{ steps.compare.outputs.should_build }}
-      og_version: ${{ steps.compare.outputs.og_version }}
+      should_build: ${{ steps.check.outputs.should_build }}
+      og_tag:       ${{ steps.check.outputs.og_tag }}
+      og_notes:     ${{ steps.check.outputs.og_notes }}
     steps:
-      - name: Checkout my repo
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: crack
-          fetch-depth: 0
           token: ${{ secrets.PAT }}
 
-      - name: Get upstream latest version
-        id: compare
+      - name: Check for new OG release
+        id: check
+        env:
+          FORCE: ${{ inputs.force_build }}
         run: |
-          # Fetch latest release tag from the OG repo
-          OG_VERSION=$(curl -s https://api.github.com/repos/skopevoj/spoti.pw/releases/latest | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
-          echo "OG latest version: $OG_VERSION"
-          echo "og_version=$OG_VERSION" >> $GITHUB_OUTPUT
+          # Latest release from the original repo
+          OG_TAG=$(curl -sf https://api.github.com/repos/skopevoj/spoti.pw/releases/latest \
+                   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['tag_name'])")
+          OG_NOTES=$(curl -sf https://api.github.com/repos/skopevoj/spoti.pw/releases/latest \
+                   | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('body','')[:800])")
+          echo "og_tag=$OG_TAG" >> $GITHUB_OUTPUT
+          # Escape multiline for output
+          echo "og_notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$OG_NOTES"     >> $GITHUB_OUTPUT
+          echo "EOF"           >> $GITHUB_OUTPUT
 
-          # Read what version we last built (stored in .last-built-version file)
-          MY_LAST=$(cat .last-built-version 2>/dev/null || echo "none")
-          echo "My last built version: $MY_LAST"
+          # What did we last build?
+          LAST=$(cat .last-built-og-tag 2>/dev/null || echo "none")
+          echo "OG latest : $OG_TAG"
+          echo "Last built: $LAST"
 
-          FORCE="${{ inputs.force_build }}"
-          if [ "$OG_VERSION" != "$MY_LAST" ] || [ "$FORCE" = "true" ]; then
-            echo "New version detected or forced! Will sync and build."
+          if [ "$OG_TAG" != "$LAST" ] || [ "$FORCE" = "true" ]; then
+            echo "✅ New release detected — will build."
             echo "should_build=true" >> $GITHUB_OUTPUT
           else
-            echo "Already up to date at $MY_LAST. Skipping."
+            echo "⏭ Already up to date. Skipping."
             echo "should_build=false" >> $GITHUB_OUTPUT
           fi
 
-  # ─────────────────────────────────────────────
-  # 2. SYNC: Merge OG repo changes into crack branch
-  # ─────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────────
+  # STEP 2 — Merge OG's new release code into your crack branch
+  # (Your samj mods stay — git preserves them on the crack branch)
+  # ──────────────────────────────────────────────────────────────
   sync:
     needs: check
     if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout my repo
+      - name: Checkout crack branch
         uses: actions/checkout@v4
         with:
           ref: crack
@@ -74,28 +88,28 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Merge upstream changes
+      - name: Merge OG release into crack (keeps your mods)
         run: |
-          git remote add upstream https://github.com/skopevoj/spoti.pw.git
-          git fetch upstream
-          git merge upstream/main --no-edit || {
+          git remote add og https://github.com/skopevoj/spoti.pw.git
+          git fetch og
+
+          # Merge OG's main (the release tag's code) into crack.
+          # Your samj/crack commits stay — git only adds the new OG changes.
+          git merge og/main --no-edit || {
             git merge --abort
-            echo "::error::Merge conflict with upstream/main — manual resolution required"
+            echo "::error::Merge conflict — the OG update conflicts with your mods. Manual fix needed."
             exit 1
           }
 
-      - name: Update last-built-version tracker
-        run: |
-          echo "${{ needs.check.outputs.og_version }}" > .last-built-version
-          git add .last-built-version
-          git diff --staged --quiet || git commit -m "chore: track upstream ${{ needs.check.outputs.og_version }}"
+          # Record the OG tag we just merged so we don't rebuild unnecessarily
+          echo "${{ needs.check.outputs.og_tag }}" > .last-built-og-tag
+          git add .last-built-og-tag
+          git diff --staged --quiet || git commit -m "chore: merged OG ${{ needs.check.outputs.og_tag }}"
+          git push origin crack
 
-      - name: Push
-        run: git push origin crack
-
-  # ─────────────────────────────────────────────
-  # 3. BUILD: Compile tweak → DEB + IPA, publish to Releases
-  # ─────────────────────────────────────────────
+  # ──────────────────────────────────────────────────────────────
+  # STEP 3 — Build the .deb tweak + patched .ipa, publish both
+  # ──────────────────────────────────────────────────────────────
   build:
     needs: [check, sync]
     if: needs.check.outputs.should_build == 'true'
@@ -103,7 +117,7 @@ jobs:
     env:
       THEOS: ${{ github.workspace }}/theos
     steps:
-      - name: Checkout my repo (crack branch)
+      - name: Checkout crack branch
         uses: actions/checkout@v4
         with:
           ref: crack
@@ -123,9 +137,10 @@ jobs:
       - name: Install build tools
         run: |
           brew install make dpkg ldid
-          python3 -m pip install --break-system-packages git+https://github.com/asdfzxcvbn/pyzule-rw.git
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/asdfzxcvbn/pyzule-rw.git
 
-      - name: Download decrypted Spotify IPA
+      - name: Download Spotify IPA (fixed version from secret)
         env:
           IPA_URL: ${{ secrets.IPA_URL }}
         run: |
@@ -134,61 +149,69 @@ jobs:
             exit 1
           fi
           mkdir -p ipa
-          echo "Downloading IPA..."
           curl -fsSL "$IPA_URL" -o ipa/spotify.ipa
           case "$(file --mime-type -b ipa/spotify.ipa)" in
-            application/zip|application/x-ios-app) echo "IPA verified OK" ;;
-            *) echo "::error::Downloaded file is not a valid IPA"; exit 1 ;;
+            application/zip|application/x-ios-app)
+              echo "✅ IPA downloaded and verified." ;;
+            *)
+              echo "::error::Downloaded file is not a valid IPA."; exit 1 ;;
           esac
 
-      - name: Flag table (from secret)
+      - name: Restore flag table (if secret set)
         env:
           SG_FLAG_LIST: ${{ secrets.SG_FLAG_LIST }}
         run: |
           if [ -n "$SG_FLAG_LIST" ]; then
-            echo "$SG_FLAG_LIST" | base64 -d | gunzip > tweak/Sources/Shared/Flags/SGFlagList.m
-            echo "Flag table restored from secret."
+            echo "$SG_FLAG_LIST" | base64 -d | gunzip \
+              > tweak/Sources/Shared/Flags/SGFlagList.m
+            echo "✅ Flag table restored from secret."
           else
-            echo "SG_FLAG_LIST not set — will be extracted from IPA at build time."
+            echo "ℹ️ SG_FLAG_LIST not set — will extract from IPA at build time."
           fi
 
-      - name: Build tweak (produces .deb)
+      - name: Build tweak → .deb
         run: env -u MAKELEVEL gmake -C tweak clean package
 
-      - name: Build full IPA (injects tweak into Spotify)
+      - name: Build patched Spotify → .ipa
         run: make release
 
-      - name: Get version info
-        id: version
+      - name: Get version info for release tag
+        id: ver
         run: |
-          MOD_VER=$(cat version.txt | tr -d '[:space:]')
-          SPOTIFY_VER=$(unzip -p ipa/spotify.ipa "$(unzip -Z1 ipa/spotify.ipa | grep -oE '^Payload/[^/]+\.app/' | head -1)Info.plist" | plutil -extract CFBundleShortVersionString raw -o - -)
-          TAG="v${MOD_VER}-spotify${SPOTIFY_VER}"
-          echo "mod_ver=$MOD_VER" >> $GITHUB_OUTPUT
-          echo "spotify_ver=$SPOTIFY_VER" >> $GITHUB_OUTPUT
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "Built: spoti.pw $MOD_VER on Spotify $SPOTIFY_VER → tag $TAG"
+          MOD=$(cat version.txt | tr -d '[:space:]')
+          APP_DIR=$(unzip -Z1 ipa/spotify.ipa | grep -oE '^Payload/[^/]+\.app/' | head -1)
+          SPT=$(unzip -p ipa/spotify.ipa "${APP_DIR}Info.plist" \
+                | plutil -extract CFBundleShortVersionString raw -o - -)
+          echo "mod=$MOD"   >> $GITHUB_OUTPUT
+          echo "spt=$SPT"   >> $GITHUB_OUTPUT
+          echo "tag=v${MOD}-spt${SPT}" >> $GITHUB_OUTPUT
 
-      - name: Publish DEB + IPA to GitHub Release
+      - name: Publish .deb + .ipa to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           token: ${{ secrets.PAT }}
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: "Spotify++ ${{ steps.version.outputs.mod_ver }} (Spotify ${{ steps.version.outputs.spotify_ver }})"
+          tag_name:   ${{ steps.ver.outputs.tag }}
+          name: "Spotify++ v${{ steps.ver.outputs.mod }} (Spotify ${{ steps.ver.outputs.spt }})"
           body: |
-            ## What's new
-            Synced from [spoti.pw ${{ needs.check.outputs.og_version }}](https://github.com/skopevoj/spoti.pw/releases/tag/${{ needs.check.outputs.og_version }}) with custom modifications.
+            ## Spotify++ v${{ steps.ver.outputs.mod }}
 
-            | | Version |
+            Automatically built by merging [spoti.pw ${{ needs.check.outputs.og_tag }}](https://github.com/skopevoj/spoti.pw/releases/tag/${{ needs.check.outputs.og_tag }}) with the custom mods from [samj-exe/SMJ-spoti.pw-premium-prebuilt](https://github.com/samj-exe/SMJ-spoti.pw-premium-prebuilt).
+
+            | | |
             |---|---|
-            | 🔧 Tweak | `${{ steps.version.outputs.mod_ver }}` |
-            | 🎵 Spotify | `${{ steps.version.outputs.spotify_ver }}` |
+            | 🔧 Tweak version | `v${{ steps.ver.outputs.mod }}` |
+            | 🎵 Spotify version | `${{ steps.ver.outputs.spt }}` |
+            | 🆕 Based on OG | `${{ needs.check.outputs.og_tag }}` |
 
-            ### Install
-            - **IPA** → Sideloadly, AltStore, Feather, or TrollStore
-            - **DEB** → Sileo / Zebra (jailbroken)
+            ### What's new in the OG update
+            ${{ needs.check.outputs.og_notes }}
 
-            > Built automatically when [skopevoj/spoti.pw](https://github.com/skopevoj/spoti.pw) released a new version.
+            ---
+            ### How to install
+            | File | Method |
+            |---|---|
+            | `.ipa` | Sideloadly · AltStore · Feather · TrollStore |
+            | `.deb` | Sileo · Zebra (jailbroken only) |
           files: |
             out/*.ipa
             tweak/packages/*.deb
