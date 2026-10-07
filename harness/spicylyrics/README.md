@@ -1,22 +1,17 @@
 # Spicy Lyrics harness
 
-`Shared/LyricsSources/SpicyLyrics.m` compiled and run on the Mac, with the two things it reaches
-out through — the Spotify token it borrows and the POST — replaced by ones the test drives
-(`stubs.m`). Everything else in it is the real file.
+`Shared/LyricsSources/SpicyLyrics.m` compiled and run on the Mac, on the real line model
+(`KaraokeTiming.m`) and `SGTTML.m`, with the request answered by the test (`stubs.m`) and the
+source's defaults kept in memory.
 
     ./build.sh
 
-What it is for is the packed shape the API answers in: every distinct value in the document once,
-then a stream of opcodes rebuilding it. `pack.ts` packs the test documents with the extension's
-**own packer** (cloned into `build/`), so the decoder in `SpicyLyrics.m` is checked against the only
-other implementation of that shape there is, rather than against a reading of it. The documents
-cover all three shapes the API sends — `Syllable`, `Line` and `Static` — and the `-1` and `-3`
-opcodes between them; the words in them are placeholders, not a song.
+The fixtures are the three shapes the developer platform documents (`Syllable`, `Line`, `Static`)
+from each `source` (`spicy_lyrics` with and without a maker, `apple_music`, `spotify`, `unknown`),
+in placeholder words. The test checks the lines, backing vocals, duet sides, overlapping lines,
+pronunciation and translation, the credit the terms require, the key's validation, and what the
+source does on a 401/403 (the row's text, no further requests), a 404 (kept), a 429 and a 503
+(waited out, counted as lost so the walk asks again).
 
-It also holds the source to what the chain needs of it: a track the server has queued (a 503 inside
-a 200 envelope) counts as a failure, so `LyricsSources.m` does not keep the track as having no
-lyrics, while a 404 is an answer and does not; a reply that does not hold together is refused
-whole; and with no Spotify request seen yet to borrow a token from, nothing is sent at all.
-
-What it cannot check is the live API: it is behind Cloudflare and answers only a signed-in Spotify
-client, so the request as a whole is only proven on the phone.
+What it cannot check is the live API with a real key: whether a publishable key with No origin
+header allowed is accepted from the phone, and the rate limit's real numbers.

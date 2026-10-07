@@ -1,77 +1,71 @@
-// Just enough of the mod around SpicyLyrics.m for it to run on the Mac: the lyrics value types as
-// they really are, and the two things the source reaches out through — the borrowed Spotify token
-// and the POST — replaced by ones the test drives.
+// What SpicyLyrics.m links against beyond the real line model: the lyrics value types, the request
+// (answered with whatever the test sets), the walk's failure count, the page lines and the language.
+#import "Core/SGCore.h"
 #import "LyricsSources.h"
-#import "Shared/Lyrics/Lyrics.h"
 
-@implementation SGKaraokeWord @end
-@implementation SGKaraokeLine @end
+@implementation SGLyricsCredit @end
 @implementation SGLyricsResult @end
 @implementation SGLyricsQuery @end
 @implementation SGLyricsProvider @end
 
-NSString *sg_token = @"Bearer test-token";
-NSString *SGKaraokeSpotifyAuthorization(void) { return sg_token; }
+@implementation SGHarnessDefaults {
+    NSMutableDictionary *_values;
+}
++ (instancetype)standardUserDefaults {
+    static SGHarnessDefaults *shared;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        shared = [SGHarnessDefaults new];
+        shared->_values = [NSMutableDictionary dictionary];
+    });
+    return shared;
+}
+- (id)objectForKey:(NSString *)key { return _values[key]; }
+- (NSString *)stringForKey:(NSString *)key { id value = _values[key]; return [value isKindOfClass:NSString.class] ? value : nil; }
+- (void)setObject:(id)value forKey:(NSString *)key { _values[key] = value; }
+- (void)removeObjectForKey:(NSString *)key { [_values removeObjectForKey:key]; }
+@end
 
-// What the last request carried, and what the next one is answered with.
+// What the last request carried, how many went out, and what the next one is answered with.
 NSURL *sg_sentTo;
-NSDictionary *sg_sentHeaders, *sg_sentBody;
+NSDictionary<NSString *, NSString *> *sg_sentHeaders;
 NSUInteger sg_sentCount;
-id sg_reply;
+id sg_replyBody;
+NSInteger sg_replyStatus = 200;
+NSDictionary<NSString *, NSString *> *sg_replyHeaders;
 NSInteger sg_notedFailures;
+NSString *sg_language;
+
+void SGLyricsGetJSONReply(NSURL *url, NSDictionary<NSString *, NSString *> *headers,
+                          void (^done)(id root, NSHTTPURLResponse *response)) {
+    sg_sentTo = url;
+    sg_sentHeaders = headers;
+    sg_sentCount++;
+    NSHTTPURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:url statusCode:sg_replyStatus HTTPVersion:@"HTTP/2"
+                                                            headerFields:sg_replyHeaders ?: @{}];
+    SGLyricsNoteReply(response, nil);
+    done(sg_replyBody, response);
+}
 
 void SGLyricsNoteReply(NSURLResponse *response, NSError *error) {
     NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
     if (error || status == 429 || status >= 500) sg_notedFailures++;
 }
 
-void SGLyricsPostJSON(NSURL *url, NSDictionary<NSString *, NSString *> *headers, id body, void (^done)(id root)) {
-    sg_sentTo = url;
-    sg_sentHeaders = headers;
-    sg_sentBody = body;
-    sg_sentCount++;
-    // The real one refuses a body it cannot write, so hold this one to the same bar.
-    NSCAssert([NSJSONSerialization isValidJSONObject:body], @"the body is not JSON");
-    done(sg_reply);
+NSString *SGLyricsTranslationLanguage(void) {
+    return sg_language;
 }
 
-// The page lines are LyricsSources.m's own, proven work; here they only need to be countable.
+// LyricsSources.m's own, less the ♪ lines it puts between breaks.
 void SGLyricsPageLines(NSArray<SGKaraokeLine *> *lines, NSArray<NSNumber *> **starts, NSArray<NSString *> **texts) {
     NSMutableArray<NSNumber *> *at = [NSMutableArray array];
     NSMutableArray<NSString *> *said = [NSMutableArray array];
     for (SGKaraokeLine *line in lines) {
+        NSString *text = SGKaraokeLineText(line);
+        if (line.backing) text = [text stringByAppendingFormat:@" %@", SGKaraokeLineText(line.backing)];
         [at addObject:@(line.start)];
-        [said addObject:SGKaraokeLineText(line)];
+        [said addObject:text];
     }
     *starts = at;
     *texts = said;
-}
-
-// The estimator is Shared/Lyrics' own; what matters here is what the source hands it.
-NSArray<NSNumber *> *sg_estimatedStarts;
-NSArray<NSString *> *sg_estimatedTexts;
-
-NSArray<SGKaraokeLine *> *SGKaraokeEstimatedLines(NSArray<NSNumber *> *starts, NSArray<NSString *> *texts) {
-    sg_estimatedStarts = starts;
-    sg_estimatedTexts = texts;
-    NSMutableArray<SGKaraokeLine *> *lines = [NSMutableArray array];
-    for (NSUInteger i = 0; i < texts.count; i++) {
-        SGKaraokeWord *word = [SGKaraokeWord new];
-        word.text = texts[i];
-        word.start = starts[i].integerValue;
-        SGKaraokeLine *line = [SGKaraokeLine new];
-        line.words = @[word];
-        line.start = word.start;
-        [lines addObject:line];
-    }
-    return lines.count ? lines : nil;
-}
-
-NSString *SGKaraokeLineText(SGKaraokeLine *line) {
-    NSMutableString *text = [NSMutableString string];
-    for (SGKaraokeWord *word in line.words) {
-        if (text.length && !word.joined) [text appendString:@" "];
-        [text appendString:word.text];
-    }
-    return text;
 }
