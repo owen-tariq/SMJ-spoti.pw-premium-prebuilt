@@ -37,6 +37,20 @@ static NSString *const kLegacyNetEase = @"spotifyglass.neteaseWordTiming";
 // walk can tell "no source has lyrics" from "a source could not say". Only the first is kept.
 static _Atomic NSUInteger sg_failures;
 
+BOOL SGEeveeLoaded(void) {
+    static BOOL loaded;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        loaded = objc_getClass("_TtC12EeveeSpotify27EeveeSettingsViewController") != nil;
+        for (uint32_t i = 0, count = _dyld_image_count(); i < count && !loaded; i++) {
+            const char *path = _dyld_get_image_name(i);
+            const char *name = path ? strrchr(path, '/') : NULL;
+            loaded = name && strcasestr(name, "eevee");
+        }
+    });
+    return loaded;
+}
+
 BOOL SGLyricsReplyFailed(NSURLResponse *response, NSError *error) {
     NSInteger status = [response isKindOfClass:NSHTTPURLResponse.class] ? ((NSHTTPURLResponse *)response).statusCode : 0;
     return error || status == 429 || status >= 500;

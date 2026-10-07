@@ -64,6 +64,8 @@ typedef void (^SGLyricsAsk)(SGLyricsQuery *query, void (^done)(SGLyricsResult *r
 @property (nonatomic, copy) SGLyricsAsk ask;
 @end
 
+BOOL SGEeveeLoaded(void);   // EeveeSpotify injected at all, found by its classes or a dylib named for it
+
 // Every source there is, in the order a fresh install asks them.
 NSArray<SGLyricsProvider *> *SGLyricsAllProviders(void);
 SGLyricsProvider *SGLyricsProviderFor(NSString *key);
