@@ -97,7 +97,14 @@ jobs:
           # Your samj/crack commits stay — git only adds the new OG changes.
           git merge og/main --no-edit || {
             git merge --abort
-            echo "::error::Merge conflict — the OG update conflicts with your mods. Manual fix needed."
+            echo "::error::Merge conflict with og/main — manual fix needed."
+            exit 1
+          }
+          
+          # Merge OG's beta branch because many new features (like Apple Music player) are kept there!
+          git merge og/beta --no-edit || {
+            git merge --abort
+            echo "::error::Merge conflict with og/beta — manual fix needed."
             exit 1
           }
 
