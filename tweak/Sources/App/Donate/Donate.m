@@ -496,6 +496,14 @@ static void offerWhenClear(NSInteger tries) {
     SGLog(@"donate: asked over %@%@", NSStringFromClass(top.class), afterTour ? @", after the tour" : @"");
 }
 
+BOOL SGDonateShown(void) {
+    return sg_offered;
+}
+
+void SGDonateHoldOff(void) {
+    if (nextAsk() < now() + kEvery) askAgainIn(kEvery);
+}
+
 void SGDonateAfterTour(BOOL restarting) {
     [NSUserDefaults.standardUserDefaults setBool:YES forKey:kAfterTourKey];
     if (!restarting) SGOfferDonate();
