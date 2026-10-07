@@ -169,10 +169,7 @@ jobs:
             echo "ℹ️ SG_FLAG_LIST not set — will extract from IPA at build time."
           fi
 
-      - name: Build tweak → .deb
-        run: env -u MAKELEVEL gmake -C tweak clean package
-
-      - name: Build patched Spotify → .ipa
+      - name: Build tweak and patched Spotify (produces .deb + .ipa)
         run: make release
 
       - name: Get version info for release tag
