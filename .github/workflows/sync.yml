@@ -102,9 +102,13 @@ jobs:
           }
 
           # Record the OG tag we just merged so we don't rebuild unnecessarily
+          # Also forcibly update version.txt to match the OG tag exactly
           echo "${{ needs.check.outputs.og_tag }}" > .last-built-og-tag
-          git add .last-built-og-tag
-          git diff --staged --quiet || git commit -m "chore: merged OG ${{ needs.check.outputs.og_tag }}"
+          OG_TAG="${{ needs.check.outputs.og_tag }}"
+          echo "${OG_TAG#v}" > version.txt
+          
+          git add .last-built-og-tag version.txt
+          git diff --staged --quiet || git commit -m "chore: merged OG ${{ needs.check.outputs.og_tag }} and synced version"
           git push origin crack
 
   # ──────────────────────────────────────────────────────────────
