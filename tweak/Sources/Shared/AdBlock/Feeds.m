@@ -3,7 +3,7 @@
 // field 1 message; a section goes when its bytes name an ad, or a promotion and a surface for it.
 #import "Core/SGCore.h"
 #import "AdBlock.h"
-#import "Protobuf.h"
+#import "Shared/Lyrics/Protobuf.h"
 
 static const char *const hardMarkers[] = {
     "spotify:ad:", "ad-formats", "advertisement", "brand-ad", "sponsored", "marquee", "promoted", "home-ads",

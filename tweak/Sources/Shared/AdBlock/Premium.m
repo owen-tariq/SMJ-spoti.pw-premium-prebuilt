@@ -9,7 +9,7 @@
 // A customize body is CustomizeMessage { 1 UcsResponse }; bootstrap wraps that in 2 { 1 { 1 { it } } }.
 #import "Core/SGCore.h"
 #import "AdBlock.h"
-#import "Protobuf.h"
+#import "Shared/Lyrics/Protobuf.h"
 
 #pragma mark - account attributes
 
