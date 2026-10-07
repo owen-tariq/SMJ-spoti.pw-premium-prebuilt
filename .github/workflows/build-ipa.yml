@@ -9,12 +9,15 @@ on:
         type: string
       upload_method:
         description: "Where to put the result"
-        default: artifacts
+        default: release
         type: choice
-        options: [artifacts, filebin, both]
+        options: [release, artifacts, filebin, all]
 
 env:
   THEOS: ${{ github.workspace }}/theos
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -46,7 +49,6 @@ jobs:
           INPUT_IPA_URL: ${{ inputs.ipa_url }}
           SECRET_IPA_URL: ${{ secrets.IPA_URL }}
         run: |
-          # Use manually-provided URL first, fall back to the secret
           RESOLVED_URL="${INPUT_IPA_URL:-$SECRET_IPA_URL}"
           if [ -z "$RESOLVED_URL" ]; then
             echo "::error::No IPA URL provided. Either pass one as an input or set the IPA_URL repository secret."
@@ -58,15 +60,39 @@ jobs:
 
       - run: make release
 
-      - uses: actions/upload-artifact@v5
-        if: inputs.upload_method != 'filebin'
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}-$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
+
+      - name: Upload to GitHub Release
+        if: inputs.upload_method == 'release' || inputs.upload_method == 'all' || inputs.upload_method == ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "Spotify++ ${{ steps.version.outputs.tag }}"
+          body: |
+            Automated build from [spoti.pw](https://github.com/skopevoj/spoti.pw) with custom modifications.
+            
+            **Built:** ${{ github.run_id }}
+            
+            > Install via Sideloadly, AltStore, or TrollStore.
+          files: out/*.ipa
+          prerelease: false
+          make_latest: true
+
+      - name: Upload to GitHub Artifacts
+        if: inputs.upload_method == 'artifacts' || inputs.upload_method == 'all'
+        uses: actions/upload-artifact@v5
         with:
           name: spoti.ipa
           path: out/*.ipa
           if-no-files-found: error
 
       - name: Upload to filebin.net
-        if: inputs.upload_method != 'artifacts'
+        if: inputs.upload_method == 'filebin' || inputs.upload_method == 'all'
         run: |
           BIN="spotifyglass-${{ github.run_id }}"
           echo "### filebin.net download" >> "$GITHUB_STEP_SUMMARY"
