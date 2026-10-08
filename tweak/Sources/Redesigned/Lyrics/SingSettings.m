@@ -18,7 +18,7 @@ static NSString *aboutSize(void) {
 
 static NSString *footer(void) {
     return [NSString stringWithFormat:@"Sing turns the vocals of the song playing down to sing over, from the microphone in its lyrics. "
-            "It works on iOS 27 only. Its voice model, %@, is downloaded once and runs only on this iPhone. "
+            "It works on iOS 16 and up. Its voice model, %@, is downloaded once and runs only on this iPhone. "
             "The switch and the download apply straight away.", aboutSize()];
 }
 
@@ -98,10 +98,10 @@ static void confirmRemove(void) {
     [SGTopController() presentViewController:alert animated:YES completion:nil];
 }
 
-// Below iOS 27 the switch is a row saying what is missing.
+// Below iOS 16 the switch is a row saying what is missing.
 static SGModRow *unavailableRow(void) {
-    return SGStatActionRow(@"Sing", nil, ^NSString *{ return @"Needs iOS 27"; }, ^{
-        tell(@"Sing", [NSString stringWithFormat:@"Sing separates a song's vocals on this iPhone with a voice model that needs iOS 27. "
+    return SGStatActionRow(@"Sing", nil, ^NSString *{ return @"Needs iOS 16"; }, ^{
+        tell(@"Sing", [NSString stringWithFormat:@"Sing separates a song's vocals on this iPhone with a voice model that needs iOS 16. "
                        "This iPhone runs iOS %@.", UIDevice.currentDevice.systemVersion]);
     });
 }
@@ -140,7 +140,7 @@ UIViewController *SGRKaraokeSettingsPage(void) {
 
 // Beside the main page's row: what Sing would do now, or how far its model has come.
 NSString *SGRKaraokeSummary(void) {
-    if (!SGSingSupported()) return @"Needs iOS 27";
+    if (!SGSingSupported()) return @"Needs iOS 16";
     SGSingModelState state = SGSingModelCurrentState();
     if (state == SGSingModelDownloading) return [NSString stringWithFormat:@"%lld %%", SGSingModelReceived() * 100 / SGSingModelSize()];
     if (state == SGSingModelChecking) return @"Checking…";

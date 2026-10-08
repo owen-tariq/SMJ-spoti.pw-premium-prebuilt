@@ -12,6 +12,11 @@ BOOL SGEnabled(NSString *key) {
 }
 
 BOOL SGHidden(NSString *key) {
+    if ([key isEqualToString:@"spotifyglass.adblock.premium"] ||
+        [key isEqualToString:@"spotifyglass.adblock.ads"] ||
+        [key isEqualToString:@"spotifyglass.adblock.upsells"]) {
+        return SGFlag(key, YES);
+    }
     return SGFlag(key, NO);
 }
 

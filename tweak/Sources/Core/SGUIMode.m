@@ -3,7 +3,7 @@
 #import "SGPrefs.h"
 
 BOOL SGRedesignTested(void) {
-    if (@available(iOS 26.0, *)) return YES;
+    if (@available(iOS 16.0, *)) return YES;
     return NO;
 }
 
@@ -13,8 +13,8 @@ BOOL SGRedesignedUI(void) {
     dispatch_once(&once, ^{
         on = SGRedesignedUIStored();
         // A switch left on from before the warning existed, so the row does not show a look that is not running.
-        if (!on && SGFlag(SGKeyRedesign, NO)) SGSetEnabled(SGKeyRedesign, NO);
-        SGLog(@"ui: %@%@", on ? @"redesigned" : @"native", SGRedesignTested() ? @"" : @" (untested below iOS 26)");
+        if (!on && SGFlag(SGKeyRedesign, YES)) SGSetEnabled(SGKeyRedesign, NO);
+        SGLog(@"ui: %@%@", on ? @"redesigned" : @"native", SGRedesignTested() ? @"" : @" (untested below iOS 16)");
     });
     return on;
 }
@@ -24,5 +24,5 @@ BOOL SGNativeUI(void) {
 }
 
 BOOL SGRedesignedUIStored(void) {
-    return SGFlag(SGKeyRedesign, NO) && (SGRedesignTested() || SGFlag(SGKeyRedesignUntested, NO));
+    return SGFlag(SGKeyRedesign, YES) && (SGRedesignTested() || SGFlag(SGKeyRedesignUntested, NO));
 }
