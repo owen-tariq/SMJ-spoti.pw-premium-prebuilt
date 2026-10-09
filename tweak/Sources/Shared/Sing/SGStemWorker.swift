@@ -11,11 +11,11 @@ public typealias StemStatus = @convention(c) (UnsafeMutableRawPointer?, Int32) -
 private enum StemState: Int32 { case loading = 1, ready, finished, failed }
 private let packetFrames = 1024
 private let warmSeconds = 60                    // how long the model outlives the last worker using it
-private let idlePoll = Duration.milliseconds(25) // how soon a worker with nothing to read looks again
+private let idlePollNanoseconds: UInt64 = 25_000_000 // how soon a worker with nothing to read looks again
 
 // One warm model, shared by the workers that follow each other and kept for a while after the last
 // one ends. A load in flight is shared too, and one made stale by a purge never becomes the warm model.
-@available(iOS 18.0, macOS 27.0, *)
+@available(iOS 15.0, *)
 private actor SGStemModels {
     static let shared = SGStemModels()
     private var model: SGStemSeparator?
@@ -57,7 +57,7 @@ private actor SGStemModels {
         guard users == 0 else { return }
         epoch &+= 1
         let ticket = epoch
-        if seconds > 0 { try? await Task.sleep(for: .seconds(seconds)) }
+        if seconds > 0 { try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000) }
         guard ticket == epoch else { return }
         purge()
     }
@@ -70,7 +70,7 @@ private actor SGStemModels {
 
 // The C owner retains context until the final callback. Only this task invokes the endpoints;
 // the render endpoint and the worker exchange PCM through the production SPSC queues.
-@available(iOS 18.0, macOS 27.0, *)
+@available(iOS 15.0, *)
 private final class SGStemJob: @unchecked Sendable {
     let context: UnsafeMutableRawPointer?
     let read: StemRead, write: StemWrite, status: StemStatus
@@ -107,13 +107,12 @@ private final class SGStemJob: @unchecked Sendable {
             var packet = [Float](repeating: 0, count: packetFrames * 2), packetCount = 0, packetOffset = 0
             var metadata = [UInt64](repeating: 0, count: 4), origin: [UInt64]?
             var received: UInt64 = 0, nextWindow: UInt64 = 0
-            let clock = ContinuousClock()
             var windows = 0
             while !Task.isCancelled {
                 if packetOffset == packetCount {
                     let count = read(context, &packet, &metadata)
                     if count < 0 { break }
-                    if count == 0 { try await Task.sleep(for: idlePoll); continue }
+                    if count == 0 { try await Task.sleep(nanoseconds: idlePollNanoseconds); continue }
                     guard count <= packetFrames else { throw SGStemError.invalidInput }
                     if origin == nil {
                         origin = metadata; received = metadata[2]; nextWindow = received
@@ -128,11 +127,10 @@ private final class SGStemJob: @unchecked Sendable {
                 for n in 0..<count * 2 { window[filled * 2 + n] = packet[packetOffset * 2 + n] }
                 filled += count; packetOffset += count
                 if filled == size, let origin {
-                    let started = clock.now
+                    let started = Date()
                     let result = try await worker.process(window, sourceFrame: nextWindow,
                         generation: origin[0], track: origin[1], format: UInt32(origin[3]))
-                    let elapsed = started.duration(to: clock.now).components
-                    let seconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
+                    let seconds = Date().timeIntervalSince(started)
                     if windows < 3 || windows % 20 == 0 || seconds > 0.5 {
                         NSLog("[spotifyglass] Sing inference %d: %.3f s, thermal %ld", windows, seconds,
                               ProcessInfo.processInfo.thermalState.rawValue)
@@ -166,7 +164,7 @@ private final class SGStemJob: @unchecked Sendable {
 @_cdecl("SGStemWorkerStart")
 public func sgStemWorkerStart(_ context: UnsafeMutableRawPointer?, _ path: UnsafePointer<CChar>?, _ windowFrames: UInt32,
                               _ hopFrames: UInt32, _ read: StemRead?, _ write: StemWrite?, _ status: StemStatus?) -> UnsafeMutableRawPointer? {
-    if #available(iOS 18.0, macOS 27.0, *), let path, let read, let write, let status {
+    if #available(iOS 15.0, *), let path, let read, let write, let status {
         let job = SGStemJob(context: context, read: read, write: write, status: status)
         let modelPath = String(cString: path)
         job.task = Task.detached(priority: .userInitiated) {
@@ -179,14 +177,14 @@ public func sgStemWorkerStart(_ context: UnsafeMutableRawPointer?, _ path: Unsaf
 
 @_cdecl("SGStemWorkerCancel")
 public func sgStemWorkerCancel(_ handle: UnsafeMutableRawPointer?, _ unload: Int32) {
-    if #available(iOS 18.0, macOS 27.0, *), let handle {
+    if #available(iOS 15.0, *), let handle {
         Unmanaged<SGStemJob>.fromOpaque(handle).takeRetainedValue().cancel(unload: unload != 0)
     }
 }
 
 @_cdecl("SGStemWorkerPurge")
 public func sgStemWorkerPurge() {
-    if #available(iOS 18.0, macOS 27.0, *) {
+    if #available(iOS 15.0, *) {
         Task { await SGStemModels.shared.purge() }
     }
 }

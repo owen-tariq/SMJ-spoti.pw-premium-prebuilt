@@ -1,4 +1,4 @@
-TARGET := iphone:clang:latest:16.0
+TARGET := iphone:clang:latest:15.0
 ARCHS := arm64
 FINALPACKAGE := 1
 
@@ -17,6 +17,8 @@ TWEAK_NAME := spotifyglass
 spotifyglass_FILES := $(shell find Sources -name '*.m' -o -name '*.x' -o -name '*.swift' | sort)
 spotifyglass_CFLAGS := -fobjc-arc -ISources -DSG_VERSION=\"$(SG_VERSION)\" -Wno-deprecated-declarations -Wno-error
 spotifyglass_FRAMEWORKS := UIKit QuartzCore UniformTypeIdentifiers MediaPlayer CoreImage AudioToolbox AVFoundation CoreHaptics Accelerate Network Security Metal
+# Dynamic lookup for runtime symbols and private APIs
+spotifyglass_LDFLAGS := -Wl,-undefined,dynamic_lookup
 
 # Runtime swizzling instead of Substrate so the dylib has no extra dependency inside the IPA.
 spotifyglass_LOGOS_DEFAULT_GENERATOR := internal

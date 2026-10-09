@@ -25,7 +25,7 @@ enum SGStemShape {
     static let spectrumCount = spectrum.reduce(1, *)
 }
 
-@available(iOS 18.0, macOS 27.0, *)
+@available(iOS 15.0, *)
 actor SGStemSeparator {
     let windowFrames = SGStemShape.windowFrames
     private let cpu: MLModel
@@ -45,8 +45,10 @@ actor SGStemSeparator {
         try Task.checkCancellation()
         let shape = SGStemShape.spectrum.map(NSNumber.init(value:))
         let description = cpu.modelDescription
-        guard description.stateDescriptionsByName.isEmpty,
-              description.inputDescriptionsByName.count == 1, description.outputDescriptionsByName.count == 1,
+        if #available(iOS 18.0, macOS 27.0, *) {
+            guard description.stateDescriptionsByName.isEmpty else { throw SGStemError.invalidModel }
+        }
+        guard description.inputDescriptionsByName.count == 1, description.outputDescriptionsByName.count == 1,
               let input = description.inputDescriptionsByName["spectrum"]?.multiArrayConstraint,
               let output = description.outputDescriptionsByName["vocals_spectrum"]?.multiArrayConstraint,
               input.shape == shape, output.shape == shape,

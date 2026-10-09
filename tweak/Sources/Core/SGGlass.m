@@ -5,9 +5,7 @@
 // unresolved and the pane renders as a plain blur, while the capsule shape, which is the view's
 // own property, still comes out right. Spotify's own Reprise glass builds its effect the same way.
 UIVisualEffect *SGGlassEffect(void) {
-    Class glass = NSClassFromString(@"UIGlassEffect");
-    if ([glass respondsToSelector:@selector(effectWithStyle:)]) return [glass effectWithStyle:0];
-    return [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemChromeMaterialDark];
+    return [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterialDark];
 }
 
 static UIVisualEffectView *newPane(void) {
@@ -50,22 +48,7 @@ void SGHideGlassFrom(UIView *host, NSUInteger count) {
 }
 
 void SGShapeGlass(UIView *glass, CGFloat radius, BOOL capsule) {
-    Class config = NSClassFromString(@"UICornerConfiguration");
-    Class cornerRadius = NSClassFromString(@"UICornerRadius");
-    id shape = nil;
-    if (config && [glass respondsToSelector:@selector(setCornerConfiguration:)]) {
-        if (capsule && [config respondsToSelector:@selector(capsuleConfiguration)]) {
-            shape = [config capsuleConfiguration];
-        } else if ([config respondsToSelector:@selector(configurationWithUniformRadius:)] && [cornerRadius respondsToSelector:@selector(fixedRadius:)]) {
-            shape = [config configurationWithUniformRadius:[cornerRadius fixedRadius:radius]];
-        }
-    }
-    if (shape) {
-        [glass setCornerConfiguration:shape];
-        glass.clipsToBounds = NO;
-    } else {
-        glass.layer.cornerRadius = capsule ? glass.bounds.size.height / 2 : radius;
-        glass.layer.cornerCurve = kCACornerCurveContinuous;
-        glass.clipsToBounds = YES;
-    }
+    glass.layer.cornerRadius = capsule ? glass.bounds.size.height / 2 : radius;
+    glass.layer.cornerCurve = kCACornerCurveContinuous;
+    glass.clipsToBounds = YES;
 }
