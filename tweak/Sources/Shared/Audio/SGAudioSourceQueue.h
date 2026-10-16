@@ -5,6 +5,9 @@
 
 void SGAudioSourceQueueInitialize(void); // off-render, before registering source callbacks
 bool SGAudioSourceQueueSupported(AURenderCallbackStruct callback);
+// Whether the running Spotify binary is the one the read-ahead layout was taken from (9.1.78).
+// Without it Sing cannot run at all, whatever the audio format.
+bool SGAudioSourceQueueLayoutKnown(void);
 typedef struct {
     UInt32 frames;
     UInt32 boundary; // first frame after a verified, traversable end marker; UINT32_MAX otherwise
