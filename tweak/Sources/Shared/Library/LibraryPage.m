@@ -8,6 +8,7 @@
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
 #import "Shared/AudioEffects/AudioEffectsPage.h"
+#import "Shared/Workshop/Workshop.h"
 #import "Library.h"
 #import "SGLibraryStore.h"
 
@@ -296,6 +297,8 @@ UIViewController *SGLibraryPage(void) {
     remove.visible = ^BOOL { return SGLibraryHasCustomSingModel(); };
 
     NSArray<SGModSection *> *sections = @[
+        SGNotedSection(@"Workshop", @[SGWithSymbol(SGPageRow(@"Workshop", ^UIViewController *{ return SGWorkshopPageController(); }), @"shippingbox")],
+                       @"Looks, equalizer settings and GraphicEQ curves to download: data files only, checked before they are installed."),
         SGNotedSection(@"Fonts", @[fonts], @"Font files you bring in, for the redesign's lyrics."),
         SGNotedSection(@"Audio presets & headphone corrections", @[impulses, ddc, scripts, graphicEq],
                        @"The same libraries the Audio effects page uses: impulse responses for the convolver, ViPER DDC files, Liveprog scripts, and the GraphicEQ text."),
@@ -304,5 +307,5 @@ UIViewController *SGLibraryPage(void) {
                        @"A compiled Core ML separator of your own, in place of the downloaded one. It has to take the same input as Sing's model; "
                        "one that does not fails to load when Sing starts. Nothing is downloaded here."),
     ];
-    return [[SGModPage alloc] initWithTitle:@"Library" intro:@"Everything here comes from your own files in Files. Nothing is downloaded." sections:sections footer:nil];
+    return [[SGModPage alloc] initWithTitle:@"Library" intro:@"Everything here comes from your own files in Files. Nothing is downloaded unless you open the Workshop." sections:sections footer:nil];
 }

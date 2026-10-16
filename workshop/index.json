@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "calm-dusk",
+      "type": "look",
+      "name": "Calm dusk",
+      "author": "Forge",
+      "summary": "Slow indigo-to-peach glow, low and gentle.",
+      "file": "looks/calm-dusk.json",
+      "sha256": "aab782031667e3fae57c6f0b95e313037c778a2fbb0af9bf1de894adbd80f931",
+      "size": 120
+    },
+    {
+      "id": "neon-pulse",
+      "type": "look",
+      "name": "Neon pulse",
+      "author": "Forge",
+      "summary": "Four hot neon glows that react hard and move fast.",
+      "file": "looks/neon-pulse.json",
+      "sha256": "a484b1ef67bc9b96adea76cf4867be8de4cd510bab18529d55327068ed765cc0",
+      "size": 137
+    },
+    {
+      "id": "ember",
+      "type": "look",
+      "name": "Ember",
+      "author": "Forge",
+      "summary": "Warm orange and amber glows, a steady smoulder.",
+      "file": "looks/ember.json",
+      "sha256": "f22075eb8ef650db8018900c8cec0483e2a9234063cb80f4358fb974416940b8",
+      "size": 121
+    },
+    {
+      "id": "ocean-depth",
+      "type": "look",
+      "name": "Ocean depth",
+      "author": "Forge",
+      "summary": "Two deep blue-teal glows drifting slowly.",
+      "file": "looks/ocean-depth.json",
+      "sha256": "a530cbf0ea2fb2b28016a57ac6b035d4efd29a03fe78a24e321cf3b7a3a2eb39",
+      "size": 105
+    },
+    {
+      "id": "mono-mist",
+      "type": "look",
+      "name": "Mono mist",
+      "author": "Forge",
+      "summary": "Soft grey and white mist, quiet and neutral.",
+      "file": "looks/mono-mist.json",
+      "sha256": "27788d60c34dce23af5409af97528d10097f9a79716b536a3f895280e35cc127",
+      "size": 105
+    },
+    {
+      "id": "aurora",
+      "type": "look",
+      "name": "Aurora",
+      "author": "Forge",
+      "summary": "Green, cyan, violet and pink glows, lively but smooth.",
+      "file": "looks/aurora.json",
+      "sha256": "c133e8bc9d9f4707e39bab46a7b24903d7b323b195a1104bb251cf253bf563eb",
+      "size": 137
+    },
+    {
+      "id": "bass-lift",
+      "type": "eq",
+      "name": "Bass lift",
+      "author": "Forge",
+      "summary": "More low end: up to +5 dB below 100 Hz, tapering off by 400 Hz.",
+      "file": "eq/bass-lift.json",
+      "sha256": "2d1280c4b5b5bf3d39bdd96d8787461e474da640eb75517c38b071dfa8072042",
+      "size": 125
+    },
+    {
+      "id": "vocal-clarity",
+      "type": "eq",
+      "name": "Vocal clarity",
+      "author": "Forge",
+      "summary": "Trims the lows a little and lifts 1-2.5 kHz so voices sit forward.",
+      "file": "eq/vocal-clarity.json",
+      "sha256": "db28b2619b930cd1f6b2f0e36fdba52fe84ae2a0046b9e5ac05d1792b289e60e",
+      "size": 131
+    },
+    {
+      "id": "late-night",
+      "type": "eq",
+      "name": "Late-night low volume",
+      "author": "Forge",
+      "summary": "Keeps bass and treble audible when listening quietly, softens the top end.",
+      "file": "eq/late-night.json",
+      "sha256": "58744b22541c2b54e796f78d2ed72e7a8f3acadb7969246521b1f52fd85f5cf3",
+      "size": 130
+    },
+    {
+      "id": "gentle-treble-rolloff",
+      "type": "correction",
+      "name": "Gentle treble roll-off",
+      "author": "Forge",
+      "summary": "A generic, unmeasured curve easing 3-20 kHz down by up to 7 dB for bright headphones.",
+      "file": "corrections/gentle-treble-rolloff.txt",
+      "sha256": "d0a4c2620ae58a4d6fcdb897b7994b37de337c5aa35075259d1a26355ab857c1",
+      "size": 117
+    }
+  ]
+}

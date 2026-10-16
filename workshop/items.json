@@ -1,0 +1,82 @@
+[
+  {
+    "id": "calm-dusk",
+    "type": "look",
+    "name": "Calm dusk",
+    "author": "Forge",
+    "summary": "Slow indigo-to-peach glow, low and gentle.",
+    "file": "looks/calm-dusk.json"
+  },
+  {
+    "id": "neon-pulse",
+    "type": "look",
+    "name": "Neon pulse",
+    "author": "Forge",
+    "summary": "Four hot neon glows that react hard and move fast.",
+    "file": "looks/neon-pulse.json"
+  },
+  {
+    "id": "ember",
+    "type": "look",
+    "name": "Ember",
+    "author": "Forge",
+    "summary": "Warm orange and amber glows, a steady smoulder.",
+    "file": "looks/ember.json"
+  },
+  {
+    "id": "ocean-depth",
+    "type": "look",
+    "name": "Ocean depth",
+    "author": "Forge",
+    "summary": "Two deep blue-teal glows drifting slowly.",
+    "file": "looks/ocean-depth.json"
+  },
+  {
+    "id": "mono-mist",
+    "type": "look",
+    "name": "Mono mist",
+    "author": "Forge",
+    "summary": "Soft grey and white mist, quiet and neutral.",
+    "file": "looks/mono-mist.json"
+  },
+  {
+    "id": "aurora",
+    "type": "look",
+    "name": "Aurora",
+    "author": "Forge",
+    "summary": "Green, cyan, violet and pink glows, lively but smooth.",
+    "file": "looks/aurora.json"
+  },
+  {
+    "id": "bass-lift",
+    "type": "eq",
+    "name": "Bass lift",
+    "author": "Forge",
+    "summary": "More low end: up to +5 dB below 100 Hz, tapering off by 400 Hz.",
+    "file": "eq/bass-lift.json"
+  },
+  {
+    "id": "vocal-clarity",
+    "type": "eq",
+    "name": "Vocal clarity",
+    "author": "Forge",
+    "summary": "Trims the lows a little and lifts 1-2.5 kHz so voices sit forward.",
+    "file": "eq/vocal-clarity.json"
+  },
+  {
+    "id": "late-night",
+    "type": "eq",
+    "name": "Late-night low volume",
+    "author": "Forge",
+    "summary": "Keeps bass and treble audible when listening quietly, softens the top end.",
+    "file": "eq/late-night.json"
+  },
+  {
+    "id": "gentle-treble-rolloff",
+    "type": "correction",
+    "name": "Gentle treble roll-off",
+    "author": "Forge",
+    "summary": "A generic, unmeasured curve easing 3-20 kHz down by up to 7 dB for bright headphones.",
+    "file": "corrections/gentle-treble-rolloff.txt"
+  }
+]
