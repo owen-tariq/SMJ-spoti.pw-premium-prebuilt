@@ -139,14 +139,27 @@ void SGRPlayerVolumeRefresh(void) {
     for (UIViewController *owner in sg_volumeOwners.allObjects) updateVolumeRow(owner);
 }
 
+// Logos needs %orig and the closing brace on their own lines; one-line hook bodies do not preprocess.
 %hook _TtC20NowPlaying_ModesImpl18FooterElementsUnit
-- (void)viewDidLayoutSubviews { %orig; updateVolumeRow((UIViewController *)self); }
-- (void)viewDidDisappear:(BOOL)animated { %orig; removeVolumeRow((UIViewController *)self); }
+- (void)viewDidLayoutSubviews {
+    %orig;
+    updateVolumeRow((UIViewController *)self);
+}
+- (void)viewDidDisappear:(BOOL)animated {
+    %orig;
+    removeVolumeRow((UIViewController *)self);
+}
 %end
 
 %hook _TtC32ReinventFree_ReinventFreeNpvImpl30ReinventFreeFooterElementsUnit
-- (void)viewDidLayoutSubviews { %orig; updateVolumeRow((UIViewController *)self); }
-- (void)viewDidDisappear:(BOOL)animated { %orig; removeVolumeRow((UIViewController *)self); }
+- (void)viewDidLayoutSubviews {
+    %orig;
+    updateVolumeRow((UIViewController *)self);
+}
+- (void)viewDidDisappear:(BOOL)animated {
+    %orig;
+    removeVolumeRow((UIViewController *)self);
+}
 %end
 
 %ctor {
