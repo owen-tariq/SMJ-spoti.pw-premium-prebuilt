@@ -188,7 +188,7 @@ NSNotificationName const SGRTrackAccentDidChangeNotification = @"spotifyglass.re
     const size_t imageHeight = CGImageGetHeight(image);
     if (!imageWidth || !imageHeight) return NO;
 
-    const size_t side = 40;
+    enum { side = 40 }; // A true constant, so the bitmap below is a fixed-size array.
     const double scale = MIN((double)side / (double)imageWidth, (double)side / (double)imageHeight);
     const size_t width = MAX((size_t)1, (size_t)((double)imageWidth * scale + 0.5));
     const size_t height = MAX((size_t)1, (size_t)((double)imageHeight * scale + 0.5));
