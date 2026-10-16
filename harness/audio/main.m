@@ -211,7 +211,9 @@ static void *clockReader(void *context) {
 }
 
 static void transition(Unit *source, Unit *output) {
-    SGSingAudio *audio = SGSingAudioCreate((SGAudioStamp){7, 31, 0, 3, 0}, 88200, 66150, .2f);
+    SGSingGeometry audioGeometry;
+    SGSingGeometryAt(44100, &audioGeometry);
+    SGSingAudio *audio = SGSingAudioCreate((SGAudioStamp){7, 31, 0, 3, 0}, audioGeometry, .2f);
     SGSingAudioSetClock(audio, 1000, 31); SGSingAudioExpectTrack(audio, 32);
     assert(SGSingAudioAttach(audio));
     atomic_store(&clockReading, true);
@@ -301,7 +303,10 @@ int main(void) {
         SGAudioPipelineSetPullProcessor(handledError); // speed/pitch also receives separated input
         assert(render(&output, 128) == noErr && pcm[0][0] == .125f);
         assert(SGAudioPipelineSetSourceProcessor(NULL, NULL));
-        SGSingAudio *sing = SGSingAudioCreate((SGAudioStamp){1, 2, 0, 3, 0}, 88200, 44100, 0);
+        SGSingGeometry singGeometry;
+        SGSingGeometryAt(44100, &singGeometry);
+        singGeometry.hopFrames = 44100;   // this scenario writes 44100-frame vocals on purpose
+        SGSingAudio *sing = SGSingAudioCreate((SGAudioStamp){1, 2, 0, 3, 0}, singGeometry, 0);
         assert(sing); SGSingAudioSetClock(sing, 12.0, 2);
         assert(SGSingAudioAttach(sing));
         double audible;
