@@ -46,6 +46,8 @@
 #define SGRKeyPlayerBackground @"spotifyglass.redesign.player.backdrop"
 #define SGRKeyPlayerBackgroundWas @"spotifyglass.redesign.player.background"
 #define SGRKeyPlayerMotionWas @"spotifyglass.redesign.player.movingBackground"
+// The add button beside the title as the Music app's favourite star (PlayerFavourite.x); on until switched off.
+#define SGRKeyPlayerFavouriteStar @"spotifyglass.redesign.player.favouriteStar"
 typedef NS_ENUM(NSInteger, SGRPlayerBackground) {
     SGRPlayerBackgroundFluid,      // the artwork itself warped (SGRWarp.h)
     SGRPlayerBackgroundAnimated,   // a clip over Fluid artwork, where the track has one (PlayerAnimated.x)
