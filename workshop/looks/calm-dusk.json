@@ -1,0 +1,10 @@
+{
+  "intensity": 80,
+  "motion": 45,
+  "glowCount": 3,
+  "colours": [
+    "#3B4A7A",
+    "#8E5C8A",
+    "#E39A7B"
+  ]
+}
