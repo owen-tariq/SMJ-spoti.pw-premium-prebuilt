@@ -642,7 +642,7 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 }
 
 - (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
-    if (section == SGRNavbarSectionSwitch) return 3;
+    if (section == SGRNavbarSectionSwitch) return 4;
     return section == SGRNavbarSectionTabs ? (NSInteger)_entries.count : 1;
 }
 
@@ -668,13 +668,15 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
     UITableViewCell *cell = SGDequeueCell(table, @"navbar");
     switch (path.section) {
         case SGRNavbarSectionSwitch: {
-            BOOL labels = path.row == 1, inlinePlayer = path.row == 2;
+            BOOL labels = path.row == 1, inlinePlayer = path.row == 2, minimize = path.row == 3;
             if (inlinePlayer) SGFillCell(cell, @"Apple Music style player", @"Moves in beside the tabs on scroll. Restart to apply", nil, nil);
+            else if (minimize) SGFillCell(cell, @"Minimize on scroll", @"The bar folds into the current tab as a page scrolls down. Restart to apply", nil, nil);
             else SGFillCell(cell, labels ? @"Hide labels" : @"Custom navbar", labels ? @"Icons only" : nil, nil, nil);
             UISwitch *toggle = [UISwitch new];
             toggle.onTintColor = SGGreen();
             toggle.tag = path.row;
-            toggle.on = inlinePlayer ? SGHidden(SGRKeyInlinePlayer) : labels ? SGHidden(SGRKeyNavbarHideLabels) : SGEnabled(SGRKeyNavbar);
+            toggle.on = inlinePlayer ? SGHidden(SGRKeyInlinePlayer) : minimize ? SGEnabled(SGRKeyNavbarMinimizeOnScroll)
+                      : labels ? SGHidden(SGRKeyNavbarHideLabels) : SGEnabled(SGRKeyNavbar);
             [toggle addTarget:self action:@selector(toggled:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = toggle;
             break;
@@ -747,9 +749,9 @@ typedef NS_ENUM(NSInteger, SGRNavbarSection) {
 }
 
 - (void)toggled:(UISwitch *)toggle {
-    // The mini player is read at launch.
-    if (toggle.tag == 2) {
-        SGSetEnabled(SGRKeyInlinePlayer, toggle.on);
+    // The mini player and minimizing are read at launch.
+    if (toggle.tag == 2 || toggle.tag == 3) {
+        SGSetEnabled(toggle.tag == 2 ? SGRKeyInlinePlayer : SGRKeyNavbarMinimizeOnScroll, toggle.on);
         return;
     }
     SGSetEnabled(toggle.tag == 1 ? SGRKeyNavbarHideLabels : SGRKeyNavbar, toggle.on);
