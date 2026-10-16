@@ -18,6 +18,7 @@
 #import "Core/SGCore.h"
 #import "SGRSingControl.h"
 #import "Shared/Sing/SGSingController.h"
+#import "Redesigned/Lyrics/Sing.h"
 #import "Redesigned/Kit/SGRGlass.h"
 #import "Redesigned/Kit/SGRTokens.h"
 #import <objc/runtime.h>
@@ -25,7 +26,9 @@
 static char kControlKey, kPanelGlass;
 
 static const CGFloat kSide = 44;               // the button, and the capsule's width
-static const CGFloat kOpenHeight = 144;        // the capsule with the slider out above the button
+static const CGFloat kMenuHeight = 36;         // the three-dot button across the top of the open capsule
+static const CGFloat kOpenHeight = 180;        // the capsule with the menu and the slider out above the button
+static const NSTimeInterval kMenuHold = 10;    // the capsule stays open this long once its menu has been opened
 static const CGFloat kRingInset = 3.5, kRingWidth = 2.5;
 static const CGFloat kFillWhite = 0.88;        // the fill while Sing is on
 static const CGFloat kPendingAlpha = 0.3;      // how much of it shows while Sing prepares
@@ -228,6 +231,7 @@ static SGRSingLook lookOf(SGSingState state) {
 @property (nonatomic) float shownLevel;
 @property (nonatomic) CFTimeInterval collapseDeadline;
 @property (nonatomic) NSTimer *collapseTimer;
+@property (nonatomic) UIButton *menu;   // the three dots across the top of the open capsule
 - (void)refresh;
 - (void)updateHold;
 @end
@@ -253,6 +257,24 @@ static SGRSingLook lookOf(SGSingState state) {
     _slider.accessibilityHint = @"Original vocals at the top, 20 percent at the bottom";
     _slider.accessibilityIdentifier = @"sing.vocalLevel";
     [_slider addTarget:self action:@selector(changed) forControlEvents:UIControlEventValueChanged];
+    // The three dots: a menu of the vocal level, Sing's settings and turning Sing off. A system menu, so it looks
+    // and behaves like the Music app's; the capsule is held open while it is up.
+    _menu = [UIButton buttonWithType:UIButtonTypeCustom];
+    _menu.accessibilityIdentifier = @"sing.more";
+    _menu.accessibilityLabel = @"More Sing options";
+    _menu.tintColor = SGRPrimary();
+    [_menu setImage:[UIImage systemImageNamed:@"ellipsis" withConfiguration:[UIImageSymbolConfiguration configurationWithPointSize:16 weight:UIImageSymbolWeightSemibold]] forState:UIControlStateNormal];
+    _menu.showsMenuAsPrimaryAction = YES;
+    __weak typeof(self) weakSelf = self;
+    UIAction *original = [UIAction actionWithTitle:@"Original vocals" image:[UIImage systemImageNamed:@"mic"] identifier:nil handler:^(UIAction *action) { [weakSelf setLevel:1]; }];
+    UIAction *half = [UIAction actionWithTitle:@"Half the vocals" image:[UIImage systemImageNamed:@"mic.slash"] identifier:nil handler:^(UIAction *action) { [weakSelf setLevel:0.5f]; }];
+    UIAction *quiet = [UIAction actionWithTitle:@"Quietest vocals" image:[UIImage systemImageNamed:@"speaker.slash"] identifier:nil handler:^(UIAction *action) { [weakSelf setLevel:SGSingMinimumVocalLevel]; }];
+    UIAction *settings = [UIAction actionWithTitle:@"Karaoke settings" image:[UIImage systemImageNamed:@"gearshape"] identifier:nil handler:^(UIAction *action) { [weakSelf openKaraokeSettings]; }];
+    UIAction *off = [UIAction actionWithTitle:@"Turn off Sing" image:[UIImage systemImageNamed:@"power"] identifier:nil handler:^(UIAction *action) { [weakSelf turnOff]; }];
+    off.attributes = UIMenuElementAttributesDestructive;
+    _menu.menu = [UIMenu menuWithChildren:@[[UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[original, half, quiet]],
+                                            [UIMenu menuWithTitle:@"" image:nil identifier:nil options:UIMenuOptionsDisplayInline children:@[settings, off]]]];
+    [_menu addTarget:self action:@selector(menuOpened) forControlEvents:UIControlEventMenuActionTriggered];
     // The capsule draws on and off itself: a custom button, so UIKit adds no highlight or selected look.
     _button = [UIButton buttonWithType:UIButtonTypeCustom];
     _button.accessibilityIdentifier = @"sing.microphone";
@@ -418,7 +440,7 @@ static SGRSingLook lookOf(SGSingState state) {
 - (void)collapseIfIdle {
     _collapseTimer = nil;
     if (!_expanded || !self.window) return;
-    BOOL busy = !SGSingStateIsOn(SGSingCurrentState()) || _dragging || _slider.tracking || _button.tracking || UIAccessibilityIsVoiceOverRunning();
+    BOOL busy = !SGSingStateIsOn(SGSingCurrentState()) || _dragging || _slider.tracking || _button.tracking || _menu.tracking || UIAccessibilityIsVoiceOverRunning();
     for (UIGestureRecognizer *gesture in _button.gestureRecognizers)
         busy |= gesture.state == UIGestureRecognizerStateBegan || gesture.state == UIGestureRecognizerStateChanged;
     NSTimeInterval left = _collapseDeadline - CACurrentMediaTime();
@@ -459,11 +481,19 @@ static SGRSingLook lookOf(SGSingState state) {
     if (_expanded) { if (_slider.superview != content) [content insertSubview:_slider belowSubview:_button]; }
     else [_slider removeFromSuperview];
     CGFloat height = CGRectGetHeight(_panel.bounds);
+    // The three dots sit in a header of their own across the top, so the slider and its fill run below it and the
+    // level never covers them. Closed there is no header; mid spring the room is never negative.
+    CGFloat menuHeight = _expanded ? kMenuHeight : 0;
+    CGFloat room = MAX(0, height - kSide - menuHeight);
+    if (_expanded) { if (_menu.superview != content) [content addSubview:_menu]; }
+    else [_menu removeFromSuperview];
+    _menu.frame = CGRectMake(0, 0, width, menuHeight);
+    _menu.userInteractionEnabled = _expanded;
     // The fill rises to the level while Sing is on or getting ready: over the whole button when closed.
     SGRSingLook look = lookOf(_shown);
-    CGFloat fill = look.on || look.preparing ? kSide + (height - kSide) * SGSingPositionFromLevel(SGSingVocalLevel()) : 0;
+    CGFloat fill = look.on || look.preparing ? kSide + room * SGSingPositionFromLevel(SGSingVocalLevel()) : 0;
     _fill.frame = CGRectMake(0, height - fill, width, fill);
-    _slider.frame = CGRectMake(0, 0, width, height - kSide);
+    _slider.frame = CGRectMake(0, menuHeight, width, room);
     _button.frame = CGRectMake(0, height - kSide, width, kSide);
     CGRect square = CGRectMake((width - kSide) / 2, 0, kSide, kSide);
     for (UIView *view in @[_ring, _glyph, _glyphOn]) view.frame = square;
@@ -477,6 +507,8 @@ static SGRSingLook lookOf(SGSingState state) {
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldReceiveTouch:(UITouch *)touch {
     if (gesture == _outside) return _expanded && ![touch.view isDescendantOfView:self];
+    // A touch on the three dots opens the menu; it is not the start of a drag.
+    if (_menu && [touch.view isDescendantOfView:_menu]) return NO;
     [self interacted];
     SGSingState state = SGSingCurrentState();
     _dragStart = [touch locationInView:self.superview];
@@ -504,6 +536,31 @@ static SGRSingLook lookOf(SGSingState state) {
 - (void)turnOff {
     SGSingSetEnabled(NO);
     self.expanded = NO;
+}
+
+#pragma mark - the three dots
+
+// The menu is on screen: keep the capsule open well past the usual three seconds.
+- (void)menuOpened {
+    _collapseDeadline = CACurrentMediaTime() + kMenuHold;
+    [self scheduleCollapse:kMenuHold];
+}
+
+- (void)setLevel:(float)level {
+    [self interacted];
+    SGSingSetVocalLevel(level);
+    _slider.value = level;
+    [self setNeedsLayout];
+    SGRAnimate(SGRMotionLayout, ^{ [self layoutIfNeeded]; }, nil);
+}
+
+- (void)openKaraokeSettings {
+    UIViewController *presenter = [self presenter];
+    if (!presenter || presenter.presentedViewController) return;
+    UINavigationController *navigation = [[UINavigationController alloc] initWithRootViewController:SGRKaraokeSettingsPage()];
+    navigation.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    navigation.modalPresentationStyle = UIModalPresentationPageSheet;
+    [presenter presentViewController:navigation animated:YES completion:nil];
 }
 
 // A drag or a long press: opens the capsule, turning Sing on first when it is off.
