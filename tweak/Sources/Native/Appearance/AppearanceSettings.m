@@ -23,8 +23,14 @@ static void chooseAccent(void) {
 
 // The native look's rows of the Appearance card (App/Pages.m).
 NSArray<SGModRow *> *SGNativeAppearanceRows(void) {
+    // The artwork colour is swapped in at launch (Accent.x), so the row says a relaunch is needed; the colour it
+    // will take is the last one published (Shared/Player/TrackAccentBridge.h), kept across launches.
+    SGModRow *follows = SGOptionRow(@"Follow artwork colours",
+                                    @"Uses the artwork colour last read while Redesigned UI's own Follow artwork colours switch was on. Applies at the next launch; until then your chosen colour stands.",
+                                    SGKeyAccentFollowArtwork);
     return @[
         SGWithSymbol(SGOptionRow(@"AMOLED background", nil, SGKeyAmoled), @"moon"),
         SGWithSymbol(SGStatActionRow(@"Accent colour", nil, ^NSString *{ return SGAccentLabel(); }, ^{ chooseAccent(); }), @"paintpalette"),
+        SGWithSymbol(follows, @"photo.artframe"),
     ];
 }
