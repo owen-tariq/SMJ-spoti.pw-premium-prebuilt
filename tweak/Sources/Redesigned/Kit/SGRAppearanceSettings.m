@@ -8,6 +8,7 @@
 #import "SGRTokens.h"
 #import "SGRGlass.h"
 #import "Redesigned/Player/PlayerVolume.h"
+#import "Redesigned/Player/Player.h"
 #import "Redesigned/Home/Home.h"
 
 // Going back to Spotify's green is offered only once a colour of the mod's is set, so a stray tap
@@ -49,8 +50,10 @@ NSArray<SGModRow *> *SGRAppearanceRows(void) {
     SGModRow *djLook = SGOptionRow(@"DJ card in the player's look", @"The DJ card on an artwork field with glass inside its control, like the redesigned player.", SGRKeyHomeDJPlayerLook);
     SGModRow *collapsingTitle = SGOptionRow(@"Home title collapses on scroll", @"The large title gives way to a small centred one over a hairline as Home scrolls, like the Music app.", SGRKeyHomeCollapsingTitle);
     SGModRow *shelvesOnly = SGOptionRow(@"Home shelves only", @"The shortcuts grid and the DJ go too, so Home begins with its first shelf, like the Music app's Top Picks.", SGRKeyHomeShelvesOnly);
+    SGModRow *star = SGSwitchRow(@"Favourite star in the player", @"Spotify's add button beside the title drawn as the Music app's star, filled in the accent colour once saved.", SGRKeyPlayerFavouriteStar);
     return @[
         SGWithSymbol(follows, @"photo.artframe"),
+        SGWithSymbol(star, @"star"),
         SGWithSymbol(volume, @"speaker.wave.2"),
         SGWithSymbol(SGStatActionRow(@"Accent colour", nil, ^NSString *{ return SGRAccentLabel(); }, ^{ chooseAccent(); }), @"paintpalette"),
         SGWithSymbol(glassStrength, @"circle.lefthalf.filled"),
