@@ -48,3 +48,29 @@ void SGRSetLyricsTextShown(SGRLyricsText text, BOOL shown) {
     SGSetEnabled(text == SGRLyricsTextTranslation ? SGRKeyLyricsTranslation : SGRKeyLyricsPronunciation, shown);
     [NSNotificationCenter.defaultCenter postNotificationName:SGRLyricsTextDidChangeNotification object:nil];
 }
+
+#pragma mark - the font
+
+NSString *SGRLyricsFontFamily(void) {
+    NSString *family = [NSUserDefaults.standardUserDefaults stringForKey:SGRKeyLyricsFontFamily];
+    return family.length ? family : nil;
+}
+
+void SGRSetLyricsFontFamily(NSString *family) {
+    if (family.length) [NSUserDefaults.standardUserDefaults setObject:family forKey:SGRKeyLyricsFontFamily];
+    else [NSUserDefaults.standardUserDefaults removeObjectForKey:SGRKeyLyricsFontFamily];
+    [NSNotificationCenter.defaultCenter postNotificationName:SGRLyricsTextDidChangeNotification object:nil];
+}
+
+// The family is asked for by name through a descriptor, so the weight picks the nearest face the family has
+// (a single-face family answers that face). A family UIFont has no faces for is the system font: the Library
+// registered it once, and the file has gone since.
+UIFont *SGRLyricsFont(CGFloat size, UIFontWeight weight) {
+    NSString *family = SGRLyricsFontFamily();
+    if (!family || ![UIFont fontNamesForFamilyName:family].count) return [UIFont systemFontOfSize:size weight:weight];
+    UIFontDescriptor *descriptor = [UIFontDescriptor fontDescriptorWithFontAttributes:@{
+        UIFontDescriptorFamilyAttribute: family,
+        UIFontDescriptorTraitsAttribute: @{UIFontWeightTrait: @(weight)},
+    }];
+    return [UIFont fontWithDescriptor:descriptor size:size] ?: [UIFont systemFontOfSize:size weight:weight];
+}
