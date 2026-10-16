@@ -201,7 +201,11 @@ Redesigned:
                   moving -- so it no longer arrives a piece at a time; after 1.2 s it shows whatever is missing, and
                   the back button, being the system's navigation bar, is there throughout
     Navbar/       the glass tab bar (TabBar.x) over its own composition (Navbar.x, NavbarLayout.m) and editor, with the fade to
-                  black over the pages behind the bars that Spotify's bar drew; the glass search field.
+                  black over the pages behind the bars that Spotify's bar drew; the glass search field. The bar minimizes
+                  as the page in front scrolls down and comes back as it scrolls up (Minimize on scroll, on unless switched
+                  off): UIKit's own behaviour where the bar is a UITabBarController's (the mini player, iOS 26), otherwise
+                  the mod's own on any iOS, the bar folding into the selected tab's glyph on a glass circle at the leading
+                  edge. The page's list is guessed at, or named by the page (Home/HomeScroll.x).
                   Spotify is made to leave the glass bar its height where its own bar is shorter (a phone with a home button,
                   Offline or Private Session under the bar), so the now playing bar and the pages move up with it. Laid out on
                   the Mac against harness/tabbar/
