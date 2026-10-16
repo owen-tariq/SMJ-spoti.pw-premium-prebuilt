@@ -1,12 +1,15 @@
+// The render-side timeline at every source rate it takes (one per argument, or 44.1, 48 and 96 kHz): the
+// block is 10 ms of the rate, the capacity four seconds, the window two.
 #include "Shared/Sing/SGSingTimeline.h"
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-enum { block = 441, capacity = 44100 * 4 };
-static float dry[block * 2], vocal[block * 2], output[block * 2];
+static uint32_t rate = 44100, block = 441, capacity = 44100 * 4, window = 88200, recoveryLimit;
+static float dry[960 * 2], vocal[960 * 2], output[960 * 2];
 static SGAudioStamp stamp(uint64_t at) { return (SGAudioStamp){7, 12, at, 1, block}; }
-static float signal(uint64_t sample) { return .25f + .125f * sinf((float)(sample % 44100) * .013f); }
+static float signal(uint64_t sample) { return .25f + .125f * sinf((float)(sample % rate) * .013f); }
 static void fill(uint64_t at) {
     for (unsigned i = 0; i < block; i++) {
         dry[i*2] = signal(at+i); dry[i*2+1] = -dry[i*2];
@@ -20,13 +23,14 @@ static void verify(uint64_t at, uint32_t count, float gain) {
     }
 }
 static void recoverWithoutChattering(bool sustained) {
-    SGSingTimeline *t = SGSingTimelineCreate(44100 * 8, 88200);
+    SGSingTimeline *t = SGSingTimelineCreate(rate, rate * 8, window);
+    assert(t && SGSingTimelineRecoveryLimit(t) == recoveryLimit);
     SGSingTimelineBegin(t, stamp(0), .2f);
     uint64_t captured = 0, processed = 0, consumed = 0;
-    for (; captured < 44100 * 6; captured += block) {
+    for (; captured < (uint64_t)rate * 6; captured += block) {
         fill(captured); assert(SGSingTimelineCapture(t, stamp(captured), dry));
     }
-    for (; processed < 44100 * 3; processed += block) {
+    for (; processed < (uint64_t)rate * 3; processed += block) {
         fill(processed); assert(SGSingTimelineVocals(t, stamp(processed), vocal));
     }
     // Every callback emits the next original frame, including recovery and a final drain.
@@ -44,20 +48,20 @@ static void recoverWithoutChattering(bool sustained) {
     } while (0)
     while (SGSingTimelineGetState(t) != SGSingTimelineRecovering) ADVANCE();
     uint64_t firstRecovery = consumed;
-    for (; processed < consumed + 44100; processed += block) {
+    for (; processed < consumed + rate; processed += block) {
         fill(processed); assert(SGSingTimelineVocals(t, stamp(processed), vocal));
     }
     ADVANCE();
     // One late hop used to re-enable reduction with only a second of coverage. Another
     // slow inference would bring the original vocals back almost immediately.
     assert(SGSingTimelineGetState(t) == SGSingTimelineRecovering);
-    for (; processed < consumed + 88200; processed += block) {
+    for (; processed < consumed + window; processed += block) {
         fill(processed); assert(SGSingTimelineVocals(t, stamp(processed), vocal));
     }
     ADVANCE();
     assert(SGSingTimelineGetState(t) == SGSingTimelineActive);
     if (sustained) {
-        uint64_t healthyUntil = consumed + SGSingRecoveryLimitFrames + block * 2;
+        uint64_t healthyUntil = consumed + recoveryLimit + block * 2;
         while (consumed < healthyUntil) {
             for (; processed < captured; processed += block) {
                 fill(processed); assert(SGSingTimelineVocals(t, stamp(processed), vocal));
@@ -74,13 +78,18 @@ static void recoverWithoutChattering(bool sustained) {
         assert(SGSingTimelineGetState(t) == SGSingTimelineRecovering);
     }
     // A brief recovery is not a healthy run and must not reset the outage deadline.
-    while (consumed < firstRecovery + SGSingRecoveryLimitFrames + block) ADVANCE();
+    while (consumed < firstRecovery + recoveryLimit + block) ADVANCE();
     assert(SGSingTimelineGetState(t) == SGSingTimelineDraining);
     SGSingTimelineDestroy(t);
     #undef ADVANCE
 }
-int main(void) {
-    SGSingTimeline *cold = SGSingTimelineCreate(block * 40, block * 2);
+static void atRate(uint32_t hz) {
+    rate = hz; block = hz / 100; capacity = hz * 4; window = hz * 2; recoveryLimit = hz * SGSingRecoverySeconds;
+    printf("-- %u Hz: block %u\n", rate, block);
+    // Only the supported rates, within the largest timeline the render side is sized for.
+    assert(!SGSingTimelineCreate(32000, capacity, window) && !SGSingTimelineCreate(rate, SGSingMaxTimelineFrames + 1, window));
+    assert(!SGSingTimelineCreate(rate, capacity, capacity + 1) && !SGSingTimelineCreate(rate, capacity, 0));
+    SGSingTimeline *cold = SGSingTimelineCreate(rate, block * 40, block * 2);
     SGSingTimelineBegin(cold, stamp(0), .7f);
     for (unsigned n = 0; n < 32; n++) { fill(n*block); assert(SGSingTimelineCapture(cold,stamp(n*block),dry)); }
     for (unsigned n = 0; n < 4; n++) {
@@ -95,8 +104,8 @@ int main(void) {
     SGSingTimelineDestroy(cold);
     recoverWithoutChattering(false);
     recoverWithoutChattering(true);
-    assert(!SGSingTimelineCreate(0, 1));
-    SGSingTimeline *t = SGSingTimelineCreate(capacity, block*2);
+    assert(!SGSingTimelineCreate(rate, 0, 1));
+    SGSingTimeline *t = SGSingTimelineCreate(rate, capacity, block*2);
     assert(t);
     SGSingTimelineBegin(t, stamp(0), 0);
     uint64_t captured = 0, consumed = 0;
@@ -152,23 +161,27 @@ int main(void) {
     // Permanent worker outage first keeps dry playback aligned, then expires its recovery budget
     // and releases the delay. The source keeps supplying audio until the terminal drain.
     SGSingTimelineBegin(t, stamp(0), 0);
-    for (uint64_t at = 0; at < 44100; at += block) {
+    for (uint64_t at = 0; at < rate; at += block) {
         fill(at); assert(SGSingTimelineCapture(t, stamp(at), dry));
-        if (at < 8820) assert(SGSingTimelineVocals(t, stamp(at), vocal));
+        if (at < block * 20) assert(SGSingTimelineVocals(t, stamp(at), vocal));
     }
     consumed = 0;
-    captured = 44100;
+    captured = rate;
     while (SGSingTimelineGetState(t) != SGSingTimelineIdle) {
         if (SGSingTimelineWritable(t)) {
             fill(captured); assert(SGSingTimelineCapture(t, stamp(captured), dry)); captured += block;
         }
         uint32_t count = SGSingTimelineRead(t, output, block);
         assert(count == block);
-        if (consumed >= 8820 + 5292) verify(consumed, count, 1);
+        if (consumed >= block * 20 + rate * 120 / 1000) verify(consumed, count, 1); // past the vocals and the 120 ms bypass
         for (unsigned i = 0; i < block*2; i++) assert(isfinite(output[i]) && fabsf(output[i]) <= 1);
         consumed += count;
     }
-    assert(consumed == captured && consumed > SGSingRecoveryLimitFrames && SGSingTimelineGetState(t) == SGSingTimelineIdle);
+    assert(consumed == captured && consumed > recoveryLimit && SGSingTimelineGetState(t) == SGSingTimelineIdle);
     SGSingTimelineDestroy(t);
-    puts("sing timeline: buffering, wraparound, exact source order, dry drain, stale results and worker outage passed");
+}
+int main(int argc, char **argv) {
+    if (argc > 1) for (int i = 1; i < argc; i++) atRate((uint32_t)atoi(argv[i]));
+    else { atRate(44100); atRate(48000); atRate(96000); }
+    puts("sing timeline: buffering, wraparound, exact source order, dry drain, stale results and worker outage passed at every rate");
 }
