@@ -79,7 +79,9 @@ jobs:
             **Built:** ${{ github.run_id }}
             
             > Install via Sideloadly, AltStore, or TrollStore.
-          files: out/*.ipa
+          files: |
+            out/*.ipa
+            tweak/packages/*.deb
           prerelease: false
           make_latest: true
 
@@ -91,12 +93,20 @@ jobs:
           path: out/*.ipa
           if-no-files-found: error
 
+      - name: Upload the tweak .deb to GitHub Artifacts
+        if: inputs.upload_method == 'artifacts' || inputs.upload_method == 'all'
+        uses: actions/upload-artifact@v5
+        with:
+          name: spoti.deb
+          path: tweak/packages/*.deb
+          if-no-files-found: error
+
       - name: Upload to filebin.net
         if: inputs.upload_method == 'filebin' || inputs.upload_method == 'all'
         run: |
           BIN="spotifyglass-${{ github.run_id }}"
           echo "### filebin.net download" >> "$GITHUB_STEP_SUMMARY"
-          for f in out/*.ipa; do
+          for f in out/*.ipa tweak/packages/*.deb; do
             curl -fsS -X POST -H "Content-Type: application/octet-stream" --data-binary "@$f" "https://filebin.net/$BIN/$(basename "$f")" >/dev/null
             echo "- https://filebin.net/$BIN/$(basename "$f")" >> "$GITHUB_STEP_SUMMARY"
           done
