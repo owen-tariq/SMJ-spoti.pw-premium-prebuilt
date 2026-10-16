@@ -34,6 +34,9 @@ vertex Vertex cover(uint id [[vertex_id]]) {
 
 struct Frame {
     float width, height, time, low, mid, high, rms, ceiling, shade, shadeFrom, dither, count;
+    // Look: intensity scales each band before it swells a glow (motion is applied to `time` by the layer);
+    // three spare floats keep `colors` on its 16-byte boundary.
+    float intensity, spare0, spare1, spare2;
     float4 colors[4];
 };
 
@@ -57,7 +60,8 @@ fragment half4 glow(Vertex in [[stage_in]], constant Frame &f [[buffer(0)]]) {
     int count = clamp(int(f.count), 1, 4);
     float3 acc = float3(0.0);
     for (int i = 0; i < count; i++) {
-        float band = clamp(bands[i], 0.0, 1.0);
+        // The look's intensity: a louder or quieter swell than the level alone, still held to 0...1.
+        float band = clamp(bands[i] * f.intensity, 0.0, 1.0);
         float4 o = orbit[i];
         float2 centre = float2(cos(f.time * o.y + o.w), sin(f.time * o.z + o.w * 0.7)) * o.x;
         float2 d = p - centre;
@@ -85,11 +89,16 @@ fragment half4 glow(Vertex in [[stage_in]], constant Frame &f [[buffer(0)]]) {
 }
 )";
 
-// The same layout as the shader's Frame: twelve floats, then four float4 colours at a 16-byte boundary.
+// The same layout as the shader's Frame: sixteen floats, then four float4 colours at a 16-byte boundary.
 typedef struct __attribute__((aligned(16))) {
     float width, height, time, low, mid, high, rms, ceiling, shade, shadeFrom, dither, count;
+    float intensity, spare0, spare1, spare2;
     float colors[kMaxColors * 4];
 } SGRVisualizerFrame;
+
+const SGRVisualizerLook SGRVisualizerLookDefault = {1, 1, 0};
+// The look's ranges, as the header promises them.
+static const float kIntensityMin = 0.5f, kIntensityMax = 2, kMotionMin = 0.25f, kMotionMax = 2;
 
 #pragma mark - the device and the shader, shared by every layer
 
@@ -220,6 +229,7 @@ static const float kNeutral[2][3] = {{0.33f, 0.28f, 0.72f}, {0.62f, 0.26f, 0.58f
     self.actions = noActions();
     self.contentsGravity = kCAGravityResize;
     _paused = YES;
+    _look = SGRVisualizerLookDefault;
     _pass = [MTLRenderPassDescriptor renderPassDescriptor];
     _pass.colorAttachments[0].loadAction = MTLLoadActionDontCare;
     _pass.colorAttachments[0].storeAction = MTLStoreActionStore;
@@ -298,7 +308,26 @@ static const float kNeutral[2][3] = {{0.33f, 0.28f, 0.72f}, {0.62f, 0.26f, 0.58f
         count++;
     }
     _paletteCount = count;
+    // The slots past the colours given take them round again (the third glow of a two-colour cover is the
+    // first colour's), for a look asking for more glows than there are colours.
+    for (int i = count; i < kMaxColors; i++) memcpy(&_palette[i * 4], &_palette[(i % count) * 4], 4 * sizeof(float));
     [self changed];
+}
+
+- (void)setLook:(SGRVisualizerLook)look {
+    SGRVisualizerLook held = {
+        .intensity = isfinite(look.intensity) ? MAX(kIntensityMin, MIN(kIntensityMax, look.intensity)) : 1,
+        .motion = isfinite(look.motion) ? MAX(kMotionMin, MIN(kMotionMax, look.motion)) : 1,
+        .glowCount = look.glowCount <= 0 ? 0 : MAX(2, MIN(kMaxColors, look.glowCount)),
+    };
+    if (held.intensity == _look.intensity && held.motion == _look.motion && held.glowCount == _look.glowCount) return;
+    _look = held;
+    [self changed];
+}
+
+// The glows drawn: the look's count, or one per colour given.
+- (int)glowsDrawn {
+    return _look.glowCount > 0 ? _look.glowCount : _paletteCount;
 }
 
 - (void)setPaused:(BOOL)paused {
@@ -378,7 +407,9 @@ static const float kNeutral[2][3] = {{0.33f, 0.28f, 0.72f}, {0.62f, 0.26f, 0.58f
 - (void)tick:(CADisplayLink *)link {
     CFTimeInterval now = link.targetTimestamp;
     if (now - _lastDraw < 0.9 / [self frameRate]) return;
-    if (_lastTick > 0) _time += MIN(now - _lastTick, 0.1);
+    // The look's motion: the drift runs faster or slower by scaling the seconds added, never by scaling the
+    // clock itself, so a change of pace never jumps the glows.
+    if (_lastTick > 0) _time += MIN(now - _lastTick, 0.1) * _look.motion;
     _lastTick = now;
     [self drawAt:now still:NO];
     if (![self wantsLink]) [self updateLink];
@@ -429,7 +460,8 @@ static float follow(float shown, float wanted, float up, float down) {
             .shade = kShadeBottom,
             .shadeFrom = kShadeFrom,
             .dither = kDither,
-            .count = (float)_paletteCount,
+            .count = (float)[self glowsDrawn],
+            .intensity = _look.intensity,
         };
         memcpy(frame.colors, _palette, sizeof frame.colors);
         id<MTLCommandBuffer> buffer = [gpu.queue commandBuffer];
