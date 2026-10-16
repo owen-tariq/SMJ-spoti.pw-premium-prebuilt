@@ -66,6 +66,28 @@ extern NSNotificationName const SGRPlayerBackgroundDidChangeNotification;
 SGRWarpLook SGRPlayerFluidLook(void);
 // Posted as a slider moves or the page resets them, so the player's field and the preview follow at once.
 extern NSNotificationName const SGRPlayerFluidLookDidChangeNotification;
+// Audio visualizer's settings, shown under the choice while it is picked. Intensity and motion are whole
+// percents; glows is the index into 2, 3, 4; colours is an SGRVisualizerColours; look is the name of a
+// Library look (Shared/Library), read while colours is Look.
+#define SGRKeyVisualizerIntensity @"spotifyglass.redesign.visualizer.intensity"   // 50...200, 100 unless set
+#define SGRKeyVisualizerMotion @"spotifyglass.redesign.visualizer.motion"         // 25...200, 100 unless set
+#define SGRKeyVisualizerGlows @"spotifyglass.redesign.visualizer.glows"           // 0...2 for 2, 3, 4 glows; 4 unless set
+#define SGRKeyVisualizerColours @"spotifyglass.redesign.visualizer.colours"
+#define SGRKeyVisualizerLook @"spotifyglass.redesign.visualizer.look"             // a string
+typedef NS_ENUM(NSInteger, SGRVisualizerColours) {
+    SGRVisualizerColoursArtwork,   // read from the cover, as the visualizer began
+    SGRVisualizerColoursAccent,    // the accent colour and three tones around it
+    SGRVisualizerColoursLook,      // the colours of the Library look named, and its other settings where it sets them
+};
+typedef struct {
+    NSInteger intensity, motion, glowCount;   // percent, percent, 2...4
+    SGRVisualizerColours colours;
+} SGRVisualizerSettings;
+// The keys as stored, each within its range, and the look's name (nil without one).
+SGRVisualizerSettings SGRPlayerVisualizerSettings(void);
+NSString *SGRPlayerVisualizerLookName(void);
+// Posted (main queue) when any of the rows above changes, so the glows follow at once.
+extern NSNotificationName const SGRVisualizerSettingsDidChangeNotification;
 // The Player page's sections for the background: the choice, then the settings of the one picked.
 NSArray<SGModSection *> *SGRPlayerBackgroundSections(void);
 
@@ -94,6 +116,9 @@ BOOL SGRPlayerAnimatedShowing(CGFloat *shown, NSTimeInterval *left);
 // The view the glows draw in, for PlayerField.x to keep over `field` in the background plane; nil unless
 // Audio visualizer is picked. It listens to the output only while picked and the player is on screen.
 UIView *SGRPlayerVisualizerViewIn(UIView *plane, SGRArtworkField *field);
+// The colours the glows are drawn in now (the cover's, the accent's or the look's as resolved), empty before the
+// player has shown them: what "Save current as look" writes down.
+NSArray<UIColor *> *SGRPlayerVisualizerColors(void);
 
 #pragma mark - the cover (PlayerArtwork.x)
 
