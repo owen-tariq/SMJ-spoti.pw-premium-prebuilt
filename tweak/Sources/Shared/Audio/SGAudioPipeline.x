@@ -1,5 +1,6 @@
 #import "Shared/Audio/SGAudioPipeline.h"
 #import "Shared/Audio/SGAudioSourceQueue.h"
+#import "Shared/Sing/SGSingFormat.h" // the source rates Sing's processor takes
 #import "Core/SGLog.h"
 #import "Core/SGRebind.h"
 #import <pthread.h>
@@ -10,6 +11,7 @@ static _Atomic(const SGAudioProcessor *) processors[SGAudioStageCount];
 static _Atomic(SGAudioPullProcessor) pullProcessor;
 static SGAudioSourceProcessor sourceProcessor; // protected by gate
 static void *sourceContext;
+static Float64 sourceProcessorRate; // the source rate the processor was installed at; protected by gate
 static _Atomic(void *) attachedSourceContext;
 static _Atomic(AudioUnit) sourceUnit, outputUnit; // outputUnit's route, published for readers outside the gate
 static atomic_uint sourceBus, maximumFrames = 1024;
@@ -97,8 +99,9 @@ bool SGAudioPipelineSetSourceProcessor(SGAudioSourceProcessor processor, void *c
         AudioStreamBasicDescription format = {0};
         UInt32 size = sizeof format;
         bool supported = source && AudioUnitGetProperty(source, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Output,
-            atomic_load(&sourceBus), &format, &size) == noErr && format.mSampleRate == 44100 && format.mChannelsPerFrame == 2;
+            atomic_load(&sourceBus), &format, &size) == noErr && SGSingSupportedRate(format.mSampleRate) && format.mChannelsPerFrame == 2;
         if (!supported) { endChange(); return false; }
+        sourceProcessorRate = format.mSampleRate;
     }
     replaceSourceProcessor(processor, context);
     endChange();
@@ -257,7 +260,10 @@ static void refreshSource(Route *route) {
         return;
     }
     route->channels = input.mChannelsPerFrame;
-    if (route == active && (input.mSampleRate != 44100 || input.mChannelsPerFrame != 2)) replaceSourceProcessor(NULL, NULL);
+    // The processor was sized for the rate it was installed at: a source now at another rate, even one Sing
+    // takes, or not stereo, drops it, and its owner installs one sized for the new rate.
+    if (route == active && (input.mSampleRate != sourceProcessorRate || !SGSingSupportedRate(input.mSampleRate) || input.mChannelsPerFrame != 2))
+        replaceSourceProcessor(NULL, NULL);
     UInt32 limit = 1024;
     size = sizeof limit;
     if (AudioUnitGetProperty(route->source, kAudioUnitProperty_MaximumFramesPerSlice, kAudioUnitScope_Global, 0, &limit, &size) != noErr || !limit)
