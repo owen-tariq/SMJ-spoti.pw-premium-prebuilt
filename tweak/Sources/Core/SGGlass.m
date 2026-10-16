@@ -48,7 +48,9 @@ void SGHideGlassFrom(UIView *host, NSUInteger count) {
 }
 
 void SGShapeGlass(UIView *glass, CGFloat radius, BOOL capsule) {
-    glass.layer.cornerRadius = capsule ? glass.bounds.size.height / 2 : radius;
+    // Half the shorter side: half the height drew a wide capsule right, but on a tall thin one (the Sing volume capsule,
+    // 44 by 144) a radius of 72 on a 44pt width with continuous corners comes out as a pointed lens.
+    glass.layer.cornerRadius = capsule ? MIN(glass.bounds.size.width, glass.bounds.size.height) / 2 : radius;
     glass.layer.cornerCurve = kCACornerCurveContinuous;
     glass.clipsToBounds = YES;
 }
