@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Portable production primitives, with ASan/UBSan (or TSAN=1 for the SPSC race test)."""
+"""Portable production primitives, with ASan/UBSan (or TSAN=1 for the SPSC race test).
+
+The timeline and stream tests run at 44.1, 48 and 96 kHz (one rate as an argument runs just that one);
+the resampler test takes every supported rate to the model's and back."""
 import os
 from pathlib import Path
 import subprocess
@@ -14,6 +17,11 @@ subprocess.run([os.environ.get("CC", "clang"), "-x", "c", "-std=c11", "-Wall", "
                 str(here / "dsp_test.c"), str(src / "Shared/Audio/SGAudioRingBuffer.m"),
                 str(src / "Shared/Sing/SGSingDSP.m"), "-o", str(out / "dsp-test")], check=True)
 subprocess.run([str(out / "dsp-test")], check=True)
+subprocess.run([os.environ.get("CC", "clang"), "-x", "c", "-std=c11", "-Wall", "-Wextra",
+                "-Werror", "-pthread", "-fsanitize=" + sanitizer, "-g", "-O1", "-I", str(src),
+                str(here / "resample_test.c"), str(src / "Shared/Sing/SGSingResample.m"),
+                "-o", str(out / "resample-test")], check=True)
+subprocess.run([str(out / "resample-test")], check=True)
 subprocess.run([os.environ.get("CC", "clang"), "-x", "c", "-std=c11", "-Wall", "-Wextra",
                 "-Werror", "-pthread", "-fsanitize=" + sanitizer, "-g", "-I", str(src),
                 str(here / "timeline_test.c"), str(src / "Shared/Audio/SGAudioRingBuffer.m"),
