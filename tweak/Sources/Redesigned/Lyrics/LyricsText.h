@@ -15,6 +15,8 @@ typedef NS_ENUM(NSInteger, SGRLyricsText) {
 #define SGRKeyLyricsTranslation @"spotifyglass.redesign.lyricsTranslation"       // off until switched on
 // The three as the words "lyrics", "pronunciation" and "translation", largest first.
 #define SGRKeyLyricsTextOrder @"spotifyglass.redesign.lyricsTextOrder"
+// The family the lyrics are set in, one the Library registered (Shared/Library); unset or gone is the system font.
+#define SGRKeyLyricsFontFamily @"spotifyglass.redesign.lyrics.fontFamily"
 
 // Posted on the main queue when either switch or the order changes.
 extern NSNotificationName const SGRLyricsTextDidChangeNotification;
@@ -25,6 +27,15 @@ void SGRSetLyricsTextOrder(NSArray<NSNumber *> *order);
 NSString *SGRLyricsTextName(SGRLyricsText text);
 void SGRSetLyricsTextShown(SGRLyricsText text, BOOL shown);
 
+// The lyrics' family as stored, nil for the system font; setting one posts the change.
+NSString *SGRLyricsFontFamily(void);
+void SGRSetLyricsFontFamily(NSString *family);
+// A font of the chosen family at the size and weight, the system font when none is chosen or UIFont does not
+// have it (the file was deleted from the Library).
+UIFont *SGRLyricsFont(CGFloat size, UIFontWeight weight);
+
 // LyricsTextSettings.m: the Lyrics page's row for the order, which opens a list of the three to drag.
 @class SGModRow;
 SGModRow *SGRLyricsTextSizesRow(void);
+// LyricsTextSettings.m: the Lyrics page's Font row, System and the Library's families.
+SGModRow *SGRLyricsFontRow(void);
