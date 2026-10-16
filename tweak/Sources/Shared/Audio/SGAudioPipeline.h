@@ -9,7 +9,9 @@ typedef enum {
     SGAudioStageSing,
     SGAudioStageSpeedPitch,
     SGAudioStageEffects,
+    SGAudioStageTransitions, // Shared/Transitions: the softened entry of a new track, after the effects so they are shaped too
     SGAudioStageHaptics,
+    SGAudioStageVisualizer,   // Shared/Visualizer/SGAudioLevels.h: reads levels for the player's background, passes audio through
     SGAudioStageCount
 } SGAudioStage;
 
