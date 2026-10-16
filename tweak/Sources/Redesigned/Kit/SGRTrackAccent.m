@@ -3,6 +3,7 @@
 
 #import "Core/SGCore.h"
 #import "Shared/Player/PlayerState.h"
+#import "Shared/Player/TrackAccentBridge.h"
 #import "SGRBridges.h"
 #import "SGRAccentMath.h"
 
@@ -264,6 +265,7 @@ NSNotificationName const SGRTrackAccentDidChangeNotification = @"spotifyglass.re
     UIColor *color = [UIColor colorWithRed:(CGFloat)rgba[0] / 255.0
                                      green:(CGFloat)rgba[1] / 255.0
                                       blue:(CGFloat)rgba[2] / 255.0 alpha:1.0];
+    SGSetSharedTrackAccent(color); // Handed down for the native look (Shared/Player/TrackAccentBridge.h).
     [NSNotificationCenter.defaultCenter postNotificationName:SGRTrackAccentDidChangeNotification
                                                        object:color];
 }
@@ -272,6 +274,7 @@ NSNotificationName const SGRTrackAccentDidChangeNotification = @"spotifyglass.re
     if (!_hasColor) return;
     _hasColor = NO;
     memset(_colorRGBA, 0, sizeof(_colorRGBA));
+    SGSetSharedTrackAccent(nil);
     [NSNotificationCenter.defaultCenter postNotificationName:SGRTrackAccentDidChangeNotification object:nil];
 }
 
