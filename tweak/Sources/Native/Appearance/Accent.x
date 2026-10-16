@@ -7,6 +7,7 @@
 #import "Core/SGCore.h"
 #import "Appearance.h"
 #import "Settings/SGPageStyle.h"
+#import "Shared/Player/TrackAccentBridge.h"
 
 // The greens the app is known to build from literals: the token, and the older brand green the
 // upsell backend still names.
@@ -17,6 +18,20 @@ static NSInteger sg_accent = -1;   // 0xRRGGBB once chosen, read at launch
 static NSInteger chosen(void) {
     NSInteger rgb = SGInt(SGKeyAccent, -1);
     return rgb >= 0 && rgb <= 0xFFFFFF ? rgb : -1;
+}
+
+// Follow artwork colours: the last artwork colour the bridge has (the one stored by the last launch, since
+// at %ctor time nothing has been published yet), packed; -1 when the switch is off or none is stored, when
+// the chosen colour stands. Read once at launch like the chosen colour: the swap below happens as each
+// UIColor is made, so a colour arriving mid-launch would leave the app half one accent and half another.
+static NSInteger artworkAccent(void) {
+    if (!SGFlag(SGKeyAccentFollowArtwork, NO)) return -1;
+    CGFloat r = 0, g = 0, b = 0, a = 0;
+    UIColor *color = SGSharedTrackAccent();
+    if (!color || ![color getRed:&r green:&g blue:&b alpha:&a]) return -1;
+    return ((NSInteger)lround(MIN(1, MAX(0, r)) * 255) << 16)
+         | ((NSInteger)lround(MIN(1, MAX(0, g)) * 255) << 8)
+         | (NSInteger)lround(MIN(1, MAX(0, b)) * 255);
 }
 
 static void unpack(uint32_t rgb, CGFloat *r, CGFloat *g, CGFloat *b) {
@@ -166,6 +181,8 @@ static id swappedValue(id value) {
 
 %ctor {
     if (!SGNativeUI()) return;
-    sg_accent = chosen();
+    NSInteger artwork = artworkAccent();
+    sg_accent = artwork >= 0 ? artwork : chosen();
+    if (artwork >= 0) SGLog(@"accent: following artwork, #%06lX from the last launch", (long)artwork);
     if (sg_accent >= 0) %init;
 }

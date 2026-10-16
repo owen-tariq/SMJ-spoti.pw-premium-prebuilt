@@ -9,7 +9,8 @@
 // fought over, and nothing depends on a repaint hook.
 //
 // The field is the artwork warped (SGRWarp.h), Fluid artwork, and a paused song holds it still. With
-// Animated artwork picked, the clip's view (PlayerAnimated.x) is kept right over it.
+// Animated artwork picked, the clip's view (PlayerAnimated.x) is kept right over it; with Audio
+// visualizer picked, the glows' view (PlayerVisualizer.x) is.
 //
 // The picture comes from the Kit's now playing artwork, keyed on the picture the playing track names
 // (SGRBridges.h, issue #58): the Kit's own fetch of it, the now playing bar's 40pt cover, published by
@@ -87,12 +88,18 @@ static void keepOnTop(UIView *plane, NSArray<UIView *> *views) {
     SGRArtworkField *field = fieldIn(plane);
     sg_field = field;
     UIView *clip = SGRPlayerAnimatedViewIn(plane, field);
-    keepOnTop(plane, clip ? @[field, clip] : @[field]);
+    // Audio visualizer (PlayerVisualizer.x): its view is hosted over the field the way the clip is, nil unless picked.
+    UIView *glow = SGRPlayerVisualizerViewIn(plane, field);
+    NSMutableArray<UIView *> *onTop = [NSMutableArray arrayWithObject:field];
+    if (glow) [onTop addObject:glow];
+    if (clip) [onTop addObject:clip];
+    keepOnTop(plane, onTop);
     if (!CGRectEqualToRect(field.frame, plane.bounds)) field.frame = plane.bounds;
     // The screen the plane starts with; the pull above it shows the field.
     CGFloat height = plane.window.bounds.size.height ?: UIScreen.mainScreen.bounds.size.height;
     CGRect screen = CGRectMake(0, 0, plane.bounds.size.width, height);
     if (clip && !CGRectEqualToRect(clip.frame, screen)) clip.frame = screen;
+    if (glow && !CGRectEqualToRect(glow.frame, screen)) glow.frame = screen;
 }
 
 - (void)backgroundViewModel:(id)model didChangeColor:(id)color playerState:(id)state {

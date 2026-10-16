@@ -34,9 +34,66 @@ UIColor *SGRTertiary(void) {
     return [UIColor colorWithWhite:1 alpha:SGRIncreaseContrast() ? 0.60 : 0.40];
 }
 
+#pragma mark - accent intensity
+
+// sRGB relative luminance of a colour in 0...1 components (WCAG).
+static CGFloat channelLinear(CGFloat c) {
+    return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+
+static CGFloat luminanceOf(CGFloat r, CGFloat g, CGFloat b) {
+    return 0.2126 * channelLinear(r) + 0.7152 * channelLinear(g) + 0.0722 * channelLinear(b);
+}
+
+// Contrast against SGRNeutralField, #121212.
+static CGFloat contrastOnField(CGFloat r, CGFloat g, CGFloat b) {
+    static CGFloat field;
+    if (!field) field = luminanceOf(0x12 / 255.0, 0x12 / 255.0, 0x12 / 255.0);
+    return (luminanceOf(r, g, b) + 0.05) / (field + 0.05);
+}
+
+static void hsbToRGB(CGFloat h, CGFloat s, CGFloat v, CGFloat *r, CGFloat *g, CGFloat *b) {
+    CGFloat sector = fmod(h * 6, 6);
+    if (sector < 0) sector += 6;
+    NSInteger i = (NSInteger)floor(sector);
+    CGFloat f = sector - i, p = v * (1 - s), q = v * (1 - s * f), t = v * (1 - s * (1 - f));
+    switch (i) {
+        case 0: *r = v; *g = t; *b = p; break;
+        case 1: *r = q; *g = v; *b = p; break;
+        case 2: *r = p; *g = v; *b = t; break;
+        case 3: *r = p; *g = q; *b = v; break;
+        case 4: *r = t; *g = p; *b = v; break;
+        default: *r = v; *g = p; *b = q; break;
+    }
+}
+
+// The accent with Appearance's intensity applied: saturation and brightness scaled by it in HSB, then
+// brought back up to 4.5:1 on the field. Brightness is lifted first (the hue and saturation stay), and when
+// it is already full the saturation comes down, which is a blend towards white. At 100% the colour is
+// answered as it is, so the intensity row at its default changes nothing anyone chose.
+static UIColor *intensified(UIColor *accent) {
+    NSInteger percent = MIN(140, MAX(60, SGInt(SGRKeyAccentIntensity, 100)));
+    if (percent == 100 || !accent) return accent;
+    CGFloat h = 0, s = 0, v = 0, a = 1;
+    if (![accent getHue:&h saturation:&s brightness:&v alpha:&a]) return accent;
+    CGFloat k = percent / 100.0;
+    s = MIN(1, s * k);
+    v = MIN(1, v * k);
+    CGFloat r, g, b;
+    hsbToRGB(h, s, v, &r, &g, &b);
+    for (int step = 0; step < 100 && contrastOnField(r, g, b) < 4.5; step++) {
+        if (v < 1) v = MIN(1, v + 0.02);
+        else if (s > 0) s = MAX(0, s - 0.02);
+        else break;
+        hsbToRGB(h, s, v, &r, &g, &b);
+    }
+    return [UIColor colorWithRed:r green:g blue:b alpha:a];
+}
+
 // Read per call: the accent is stored as it is picked, and the colour row reads it the same way.
 UIColor *SGRAccent(void) {
-    return SGRTrackAccentColor() ?: SGRAccentColor() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
+    UIColor *accent = SGRTrackAccentColor() ?: SGRAccentColor() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
+    return intensified(accent);
 }
 
 UIColor *SGRNeutralField(void) {

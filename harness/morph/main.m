@@ -36,7 +36,7 @@ UIImage *SGRNowPlayingArtwork(NSString **uri, NSString **identity) { return sg_a
 const CGFloat SGRRadiusArtwork = 12;
 BOOL SGRReduceMotion(void) { return NO; }
 BOOL SGRedesignedUI(void) { return YES; }
-void SGRequireClasses(NSArray *names) {}
+void SGRequireClassesFrom(NSArray *names, const char *file) { (void)names; (void)file; }
 
 #pragma mark - Spotify's transition, as 9.1.78 runs it
 

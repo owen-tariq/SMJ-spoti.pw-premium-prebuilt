@@ -23,3 +23,19 @@ UIView *SGRGlassInside(UIView *control, const void *key, CGFloat side);
 // leads (the playlist header's Play). `prominent` lays a white film inside the shape, so that control
 // reads a step brighter than the circles beside it without leaving the same material.
 UIView *SGRGlassCapsuleInside(UIView *control, const void *key, CGSize size, BOOL prominent);
+
+// Appearance's Glass strength: 50...150 percent, 100 unless set, how much of the material every shape
+// shows. Under 100 the material thins (the shape's alpha); over 100 it densifies (a dark film inside it,
+// and a solid fill's alpha scaled). Read on every pass a shape is laid out, so the slider applies as it
+// moves. SGRGlassStrength answers it as 0.5...1.5.
+#define SGRKeyGlassStrength @"spotifyglass.redesign.glassStrength"
+CGFloat SGRGlassStrength(void);
+
+// A glass plate over the whole of `host`'s bounds with `radius` continuous corners, behind what the host
+// draws: inserted just above `above` when that is one of the host's subviews (a fill the host paints under
+// everything), else first. `tint` lays a film of that colour inside the material (nil for none); under
+// Reduce Transparency the plate is solid `tint`, or SGRSolidGlassFill without one. The one exception to
+// "never behind text" above: Home's shortcut tiles under their opt-in (Home/HomeTiles.m), whose titles are
+// white over a tint SGRPalette already keeps dark enough for them. Made once per host under `key`, kept
+// at the host's bounds by its autoresizing mask, takes no touches; nil when host or key is nil.
+UIView *SGRGlassPlateIn(UIView *host, const void *key, UIView *above, CGFloat radius, UIColor *tint);

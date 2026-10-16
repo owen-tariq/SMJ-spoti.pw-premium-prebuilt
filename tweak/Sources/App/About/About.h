@@ -81,4 +81,7 @@ void SGImportSettings(void);
 // AppIcon.m: the row that opens the list of app icons, nil in a build without them (scripts/app-icons.sh).
 SGModRow *SGAppIconRow(void);
 
+// HookReport.m: every class the %ctors asked for (SGRequireClasses), found or missing, with a copy as text.
+UIViewController *SGHookReportPage(void);
+
 UIViewController *SGAboutPage(void);   // the Mod page

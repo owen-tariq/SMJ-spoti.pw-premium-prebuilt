@@ -5,7 +5,10 @@
 #import "Settings/SGPageStyle.h"
 #import "SGRAccent.h"
 #import "SGRTrackAccent.h"
+#import "SGRTokens.h"
+#import "SGRGlass.h"
 #import "Redesigned/Player/PlayerVolume.h"
+#import "Redesigned/Home/Home.h"
 
 // Going back to Spotify's green is offered only once a colour of the mod's is set, so a stray tap
 // cannot wipe it.
@@ -31,9 +34,26 @@ NSArray<SGModRow *> *SGRAppearanceRows(void) {
     follows.changed = ^(BOOL on) { (void)on; SGRTrackAccentRefresh(); };
     SGModRow *volume = SGOptionRow(@"Player device volume", @"Controls this iPhone's audio route, not a remote Spotify Connect device.", SGRKeyPlayerVolume);
     volume.changed = ^(BOOL on) { (void)on; SGRPlayerVolumeRefresh(); };
+    // Whole percents, stored as they are dragged; the glass and the accent read them on their next pass, so
+    // neither needs a relaunch (a control already drawn with the accent takes it when Spotify next sets it).
+    NSString *(^percent)(double) = ^NSString *(double value) { return [NSString stringWithFormat:@"%ld%%", lround(value)]; };
+    SGModRow *glassStrength = SGSliderRow(@"Glass strength", @"How much of the material the redesign's glass shows: thinner below 100%, denser above.",
+                                          50, 150, 5,
+                                          ^double { return (double)MIN(150, MAX(50, SGInt(SGRKeyGlassStrength, 100))); },
+                                          ^(double value) { SGSetInt(SGRKeyGlassStrength, lround(value)); }, percent);
+    SGModRow *accentIntensity = SGSliderRow(@"Accent intensity", @"Saturation and brightness of the accent, whichever colour it is; kept readable on black.",
+                                            60, 140, 5,
+                                            ^double { return (double)MIN(140, MAX(60, SGInt(SGRKeyAccentIntensity, 100))); },
+                                            ^(double value) { SGSetInt(SGRKeyAccentIntensity, lround(value)); }, percent);
+    SGModRow *glassTiles = SGOptionRow(@"Home shortcuts on glass", @"Each shortcut tile as glass tinted with its cover's colour, in place of the solid tint.", SGRKeyHomeGlassTiles);
+    SGModRow *djLook = SGOptionRow(@"DJ card in the player's look", @"The DJ card on an artwork field with glass inside its control, like the redesigned player.", SGRKeyHomeDJPlayerLook);
     return @[
         SGWithSymbol(follows, @"photo.artframe"),
         SGWithSymbol(volume, @"speaker.wave.2"),
         SGWithSymbol(SGStatActionRow(@"Accent colour", nil, ^NSString *{ return SGRAccentLabel(); }, ^{ chooseAccent(); }), @"paintpalette"),
+        SGWithSymbol(glassStrength, @"circle.lefthalf.filled"),
+        SGWithSymbol(accentIntensity, @"slider.horizontal.3"),
+        SGWithSymbol(glassTiles, @"square.grid.2x2"),
+        SGWithSymbol(djLook, @"waveform.circle"),
     ];
 }

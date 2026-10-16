@@ -1,4 +1,4 @@
-// The player's background on Mod Settings' Player page: Fluid artwork or Animated artwork picked in place,
+// The player's background on Mod Settings' Player page: Fluid artwork, Animated artwork or Audio visualizer picked in place,
 // and under it the settings of the one picked: Fluid artwork's sliders under a preview drawn by the same
 // renderer as the player's field, or Animated artwork's sources.
 #import "Core/SGCore.h"
@@ -48,7 +48,8 @@ static void migrate(void) {
 SGRPlayerBackground SGRPlayerBackgroundStyle(void) {
     migrate();
     NSInteger style = SGInt(SGRKeyPlayerBackground, kDefaultBackground);
-    return style >= SGRPlayerBackgroundFluid && style <= SGRPlayerBackgroundAnimated ? (SGRPlayerBackground)style : kDefaultBackground;
+    // Audio visualizer (PlayerVisualizer.x) is the third choice; anything past the last reads as the default.
+    return style >= SGRPlayerBackgroundFluid && style <= SGRPlayerBackgroundVisualizer ? (SGRPlayerBackground)style : kDefaultBackground;
 }
 
 SGRWarpLook SGRPlayerFluidLook(void) {
@@ -133,8 +134,10 @@ static NSArray<SGModRow *> *shownFor(SGRPlayerBackground background, NSArray<SGM
 
 NSArray<SGModSection *> *SGRPlayerBackgroundSections(void) {
     migrate();
-    NSArray<SGModRow *> *choices = SGChoiceListRows(SGRKeyPlayerBackground, @[@"Fluid artwork", @"Animated artwork"],
-        @[@"The cover itself, blurred and slowly warped", @"The track's Canvas or the album's animated cover, looping"],
+    // The third choice, Audio visualizer, is PlayerVisualizer.x's; it has no settings of its own yet.
+    NSArray<SGModRow *> *choices = SGChoiceListRows(SGRKeyPlayerBackground, @[@"Fluid artwork", @"Animated artwork", @"Audio visualizer"],
+        @[@"The cover itself, blurred and slowly warped", @"The track's Canvas or the album's animated cover, looping",
+          @"Soft glows in the cover's colours, moving with the sound"],
         kDefaultBackground, ^(NSInteger index) {
             [NSNotificationCenter.defaultCenter postNotificationName:SGRPlayerBackgroundDidChangeNotification object:nil];
         });

@@ -2,6 +2,7 @@
 #import "SGStemWorker.h"
 #import "Core/SGLog.h"
 #import "Core/SGPrefs.h"
+#import "Shared/Library/Library.h"   // a model the user imported (Mod Settings > Library), in the downloaded one's place
 #import <CommonCrypto/CommonDigest.h>
 #import <Network/Network.h>
 
@@ -108,12 +109,23 @@ static BOOL makeFolders(NSError **error) {
     return YES;
 }
 
+static void post(BOOL progress);
+
+// Library: the imported model while Use custom model is on, nil otherwise. It stands in for the installed
+// one in what the API answers (state, path, bytes) and nowhere in the download, which goes on with its own
+// files whatever this says, so turning the switch off brings the downloaded model straight back.
+static NSURL *customModel(void) { return SGLibraryCustomSingModelURL(); }
+
 // What is on the disk, read once: the installed model when every file has its size, else the staged files
 // (named only once checked) and what each resume kept.
 static void load(void) {
     if (sg_loaded) return;
     sg_loaded = YES;
     sg_tasks = [NSMutableDictionary dictionary];
+    // Library: an import, a removal or the switch changes what the API answers; the listeners hear it as a
+    // model change of this file's own.
+    [NSNotificationCenter.defaultCenter addObserverForName:SGLibrarySingModelDidChangeNotification object:nil
+                                                     queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) { post(NO); }];
     sg_installed = YES;
     for (int i = 0; i < kFileCount; i++)
         sg_installed &= sizeAt([installedModel() URLByAppendingPathComponent:pathOf(i)]) == kFiles[i].size;
@@ -358,6 +370,7 @@ static int indexOf(NSURLSessionTask *task) {
 
 SGSingModelState SGSingModelCurrentState(void) {
     load();
+    if (customModel()) return SGSingModelInstalled;   // Library's model is in place, downloaded or not
     if (sg_installed) return SGSingModelInstalled;
     if (!sg_want) return SGSingModelMissing;
     return sg_tasks.count ? SGSingModelDownloading : SGSingModelChecking;
@@ -371,6 +384,7 @@ int64_t SGSingModelSize(void) {
 
 int64_t SGSingModelReceived(void) {
     load();
+    if (customModel()) return SGSingModelSize();   // Library's model counts as all there
     if (sg_installed) return SGSingModelSize();
     int64_t total = 0;
     for (int i = 0; i < kFileCount; i++)
@@ -382,6 +396,8 @@ NSString *SGSingModelFailure(void) { return sg_failure; }
 
 NSString *SGSingModelPath(void) {
     load();
+    NSURL *custom = customModel();   // Library's model first (see customModel)
+    if (custom) return custom.path;
     return sg_installed ? installedModel().path : nil;
 }
 

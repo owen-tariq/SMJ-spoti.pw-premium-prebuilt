@@ -15,6 +15,15 @@
 // Threading: main thread only.
 #import <UIKit/UIKit.h>
 
+// Two opt-ins on the Appearance card (Kit/SGRAppearanceSettings.m), off until asked for and read on every
+// pass, so neither waits for a relaunch:
+//   a shortcut tile drawn as tinted glass (Kit/SGRGlass.h's plate under the cover's tint) in place of the
+//   solid tinted surface (HomeTiles.m)
+#define SGRKeyHomeGlassTiles @"spotifyglass.redesign.home.glassTiles"
+//   the DJ card in the redesigned player's look: an artwork field behind it, the card radius, glass inside
+//   its round control (HomeCards.x)
+#define SGRKeyHomeDJPlayerLook @"spotifyglass.redesign.home.djPlayerLook"
+
 // Whether HomeSections.x has collapsed the section in this cell.
 BOOL SGRHomeSectionCollapsed(UIView *cell);
 

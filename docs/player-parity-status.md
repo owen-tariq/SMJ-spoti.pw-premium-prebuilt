@@ -111,3 +111,60 @@ Before merging or shipping, verify:
 - Existing customizations behave as before, with both additions switched off.
 
 No ready-to-install build or 1:1 feature parity is asserted by these source changes.
+
+# Batch B: the remaining 0.51 features (October 15, 2026)
+
+All switches below are off by default. Nothing here changes paid-service behaviour,
+version.txt, or the fork's existing customizations. Not yet compiled for iOS or tested on
+a device at the time of writing: the first "Build IPA" run is the compile test.
+
+| Original 0.51 feature | What this batch adds | Where |
+| --- | --- | --- |
+| Visualizer | Audio visualizer: a third player background. Soft glows in the cover's colours moving with low/mid/high bands, read from the output audio through a new pipeline stage. 30 fps, 15 in Low Power Mode, still under Reduce Motion. | Mod Settings > Player > background choice |
+| The Workshop | Library: import YOUR OWN files from the Files app. Lyrics fonts (.ttf/.otf), audio presets and headphone corrections (reuses the existing import pages), visualizer looks (.json), and a Sing voice model folder or .zip. No download server is contacted. | Mod Settings > Library |
+| Lighter Sing model | "Use custom model" in Library: Sing loads a user-supplied separator.mlmodelc instead of the ~489 MB download. I cannot train or export a smaller model here; this makes one usable if you have it. | Mod Settings > Library > Sing voice model |
+| AutoMix | Transitions: NOT AutoMix. A gain ramp (-12 dB to 0) and a low-pass sweep over the first 200-2000 ms of each new track. It cannot beat-match or fade the outgoing track, because the output tap only sees the audio being played. The switch's info text says so. | Mod Settings > Player > Transitions |
+| Home shortcuts on tinted glass | Shortcut tiles drawn as glass tinted toward their cover colour. Needs a screenshot to tune. | Appearance > Home shortcuts on glass |
+| DJ gets the redesigned player | DJ card restyled with the artwork field, Kit radius and a glass control. Found by shape; if the view tree differs nothing changes and one log line says so. | Appearance > DJ card in the player's look |
+| More Appearance options | Glass strength (50-150%) and Accent intensity (60-140%, kept at >= 4.5:1 on #121212). Native look gets a "Follow artwork colours" row, but it only replays a colour last read under Redesigned UI (the native look has no artwork reader yet); the row says so. | Appearance |
+| Spotify 9.1.90 support | Not done (needs that IPA). Added "Hook report" under About: lists every Spotify class the hooks asked for, found or missing, with a Copy button, so a move to 9.1.90 shows exactly what broke. | Mod Settings > About > Hook report |
+| Sign in in the browser with passkeys | Not done. It rewires Spotify's account login; cannot be done or tested safely here. | - |
+| Artist logos | Not done; no data source without the original's backend. | - |
+| Animated artwork, lyric meanings, Vibrations free | Already in the fork from the GPL base with no paid gate. | - |
+
+## Files
+
+New (all MIT): Shared/Visualizer/*, Shared/Transitions/*, Shared/Library/*,
+Shared/Player/TrackAccentBridge.*, Redesigned/Kit/SGRVisualizerLayer.*,
+Redesigned/Player/PlayerVisualizer.x, App/About/HookReport.m, harness/parity-b/*.
+
+Edited pre-existing files: 27. Of these, 15 were byte-identical to the GPL-3.0 v0.21.1
+snapshot before this batch (SGLog.h/.m, Native/Appearance/*, Redesigned/Home/*,
+SGRGlass.h, SGRTokens.h, Redesigned/Lyrics/LyricsText*.{h,m}, LyricsTextSettings.m);
+8 had already diverged from it in the fork; 4 did not exist in the GPL snapshot
+(SGRTrackAccent.m from batch A, PlayerBackgroundSettings.m, SGAudioPipeline.h,
+SGSingModel.m). Edits to the last group are small (an enum line, a model-path check)
+and are listed in the PR. This is a record, not a relicensing of the fork.
+
+## Validation done here
+
+Standalone C tests for the band analyser (sine at 100 Hz / 1 kHz / 8 kHz, silence, NaN,
+clipping) and the transition DSP (monotonic gain, stable biquad, identity at zero length,
+bit-exact across render sizes), both under UBSan. Logos preprocessing of all six touched
+.x files with balanced output. Layer-boundary check. A read-through review that found and
+fixed five runtime bugs (a two-writer seqlock, a torn parameter struct on the render
+thread, a presentation inside the picker's dismissal, an inflate loop with no progress
+guard, and a misleading row subtitle). No iOS compile here.
+
+## Device checklist
+
+- Build succeeds. If not, send the log: the new pipeline stages and the Metal shader are
+  the most likely culprits.
+- Visualizer: pick it, play music; glows move with the beat; still under Reduce Motion;
+  no stutter in the player; battery acceptable.
+- Transitions: skip tracks; the entry is softened; pause/resume does nothing; Status row
+  counts entries.
+- Library: import a .ttf, pick it under Lyrics > Font, lyrics change; import a .json look;
+  import a model folder, switch on, Sing still works.
+- Home glass tiles and DJ card: screenshots, please; both are blind restyles.
+- Hook report: open it once now on 9.1.88 to record the baseline (Copy report).

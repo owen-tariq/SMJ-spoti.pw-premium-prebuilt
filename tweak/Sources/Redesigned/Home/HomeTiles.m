@@ -8,6 +8,12 @@
 // never reads, so its constraints are left as they are. The tint is worked out off the main thread once per
 // picture and follows the cover as Spotify sets it (SGRObserveImage), since a cover lands after layout.
 //
+// Home shortcuts on tinted glass (SGRKeyHomeGlassTiles, off until asked for): the surface is a glass plate
+// instead (Kit/SGRGlass.h, SGRGlassPlateIn), in the same place in the tree, and the cover's tint goes into the
+// film inside the plate rather than onto a solid fill, so what lies behind the grid shows through the colour.
+// The tint is the same SGRPalette one, kept dark for white text, so the title keeps its contrast. The switch
+// is read on every pass: off again, the plate is hidden and the solid surface comes back.
+//
 // Tree (trees/home 3 more scrolled.txt:36-50, 2026-09-17): InteractableLayoutBackingButton id=Shortcut.Card.Home
 // 181x48 clips > UIView 181x48 bg=#FFFFFF@0.10 (the fill), then Encore.StackView > AutoLayoutStackView >
 // UIView 173x48 (the row) > UIView {0, 0} 48x48 bg=#000000@0.90 r=4 (the cover's square) > Encore.ImageView >
@@ -19,7 +25,11 @@
 // How far the cover sits in from the tile's top, bottom and leading edges, and its corners there.
 static const CGFloat kInset = 5, kCoverRadius = 4;
 
-static char kSurfaceKey, kImageKey, kShownKey;
+static char kSurfaceKey, kImageKey, kShownKey, kPlateKey, kTintKey;
+
+static BOOL glassTiles(void) {
+    return SGFlag(SGRKeyHomeGlassTiles, NO);
+}
 
 // Tints already worked out, by the image object while it lives (main thread only).
 static NSMapTable<UIImage *, UIColor *> *tints(void) {
@@ -55,8 +65,23 @@ static SGRTileParts *partsOf(UIView *tile) {
     return parts;
 }
 
+// The surface the tint goes on: the glass plate under the opt-in, else the solid view. Either sits above
+// the tile's fill, or first when the fill is not found.
 static UIView *surfaceIn(UIView *tile, UIView *fill) {
     UIView *surface = objc_getAssociatedObject(tile, &kSurfaceKey);
+    UIView *plate = objc_getAssociatedObject(tile, &kPlateKey);
+    if (glassTiles()) {
+        plate = SGRGlassPlateIn(tile, &kPlateKey, fill, SGRRadiusCover, objc_getAssociatedObject(tile, &kTintKey));
+        if (plate) {
+            if (surface && !surface.hidden) surface.hidden = YES;
+            static dispatch_once_t once;
+            dispatch_once(&once, ^{ SGLog(@"redesign home: shortcut tiles on tinted glass"); });
+            return plate;
+        }
+    } else if (plate && !plate.hidden) {
+        plate.hidden = YES;
+    }
+    if (surface && surface.hidden) surface.hidden = NO;
     if (!surface) {
         surface = [UIView new];
         surface.userInteractionEnabled = NO;
@@ -100,12 +125,22 @@ static void inset(UIView *square) {
 
 static void tint(UIView *tile, UIView *surface, UIColor *color, BOOL animated) {
     color = color ?: untinted();
-    if ([surface.backgroundColor isEqual:color]) return;
+    BOOL glass = surface && surface == objc_getAssociatedObject(tile, &kPlateKey);
+    UIColor *shown = glass ? objc_getAssociatedObject(tile, &kTintKey) : surface.backgroundColor;
+    if ([shown isEqual:color]) return;
+    objc_setAssociatedObject(tile, &kTintKey, color, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    __weak UIView *weakTile = tile;
+    void (^apply)(void) = ^{
+        UIView *strongTile = weakTile;
+        // The plate's film takes the colour (a backgroundColor, so it crossfades like the solid surface).
+        if (glass && strongTile) SGRGlassPlateIn(strongTile, &kPlateKey, partsOf(strongTile).fill, SGRRadiusCover, color);
+        else surface.backgroundColor = color;
+    };
     if (!animated || !tile.window) {
-        surface.backgroundColor = color;
+        apply();
         return;
     }
-    SGRAnimate(SGRMotionFade, ^{ surface.backgroundColor = color; }, nil);
+    SGRAnimate(SGRMotionFade, apply, nil);
 }
 
 static void refresh(UIView *tile) {

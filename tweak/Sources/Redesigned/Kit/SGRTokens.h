@@ -27,6 +27,10 @@ UIColor *SGRPrimary(void);      // white
 UIColor *SGRSecondary(void);    // white 65%, 80% with Increase Contrast
 UIColor *SGRTertiary(void);     // white 40%, 60% with Increase Contrast
 UIColor *SGRAccent(void);       // the accent colour of Appearance, else Spotify's green
+// Appearance's Accent intensity: 60...140 percent, 100 unless set. SGRAccent scales the saturation and
+// brightness of whichever accent it answers by it, then lifts the brightness (and failing that, blends
+// towards white) until the colour keeps 4.5:1 on SGRNeutralField. Read per call, like the accent.
+#define SGRKeyAccentIntensity @"spotifyglass.redesign.accentIntensity"
 UIColor *SGRNeutralField(void); // #121212, the field before a colour arrives; SGRAmoled.x turns it black
 // Where glass cannot be (Reduce Transparency), the shape it would have had: white 16% over the field.
 UIColor *SGRSolidGlassFill(void);

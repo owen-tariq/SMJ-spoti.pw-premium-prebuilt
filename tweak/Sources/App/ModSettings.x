@@ -24,6 +24,7 @@
 #import "Shared/Sing/SGSingModel.h"
 #import "Shared/Flags/Flags.h"
 #import "Shared/AudioEffects/AudioEffectsPage.h"
+#import "Shared/Library/Library.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "App/About/About.h"
 #import "App/Donate/Donate.h"
@@ -65,6 +66,7 @@ static UIViewController *modSettingsPage(void) {
         pageRow(@"Player", @"play.circle", ^UIViewController *{ return SGPlayerSettingsPage(); }),
         pageRow(@"Lyrics", @"quote.bubble", ^UIViewController *{ return SGLyricsSettingsPage(); }),
         audioEffects,
+        pageRow(@"Library", @"books.vertical", ^UIViewController *{ return SGLibraryPage(); }),   // fonts, looks, the effects' files, a Sing model of one's own
     ]];
     if (@available(iOS 17.0, *)) {
         SGModRow *liveActivity = pageRow(@"Live Activity", @"platter.filled.top.iphone", ^UIViewController *{ return SGLiveActivitySettingsPage(); });

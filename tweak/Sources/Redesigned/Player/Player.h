@@ -8,6 +8,7 @@
 //
 //     PlayerField.x      the switch's flags and rows, the field in the background plane, the cover it reads
 //     PlayerAnimated.x   Animated artwork: the Canvas or Apple Music's cover looping over the field
+//     PlayerVisualizer.x Audio visualizer: glows in the cover's colours moving with the sound over the field
 //     PlayerBackgroundSettings.m  what moves behind the player, and Fluid artwork's sliders under a preview
 //     PlayerArtwork.x    the cover's corners, shadow and paused shrink, the lyric preview under it hidden,
 //                        and every cover gone while an Animated artwork clip shows
@@ -48,6 +49,7 @@
 typedef NS_ENUM(NSInteger, SGRPlayerBackground) {
     SGRPlayerBackgroundFluid,      // the artwork itself warped (SGRWarp.h)
     SGRPlayerBackgroundAnimated,   // a clip over Fluid artwork, where the track has one (PlayerAnimated.x)
+    SGRPlayerBackgroundVisualizer, // glows in the cover's colours moving with the sound (PlayerVisualizer.x)
 };
 SGRPlayerBackground SGRPlayerBackgroundStyle(void);
 // Posted when the choice changes, so the player follows without a restart.
@@ -86,6 +88,12 @@ void SGRPlayerAnimatedFollowLyrics(BOOL open, BOOL animated);
 // Whether a clip is on screen or fading in, which takes the cover away; `shown` gets how much of the clip
 // is drawn now (0 to 1) and `left` how long its fade still runs. Either may be NULL.
 BOOL SGRPlayerAnimatedShowing(CGFloat *shown, NSTimeInterval *left);
+
+#pragma mark - Audio visualizer (PlayerVisualizer.x)
+
+// The view the glows draw in, for PlayerField.x to keep over `field` in the background plane; nil unless
+// Audio visualizer is picked. It listens to the output only while picked and the player is on screen.
+UIView *SGRPlayerVisualizerViewIn(UIView *plane, SGRArtworkField *field);
 
 #pragma mark - the cover (PlayerArtwork.x)
 
