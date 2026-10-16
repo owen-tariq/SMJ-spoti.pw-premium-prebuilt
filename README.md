@@ -99,7 +99,7 @@ independently for this fork. Nothing was copied from the original's closed relea
 | Original 0.51 feature | In this fork |
 |---|---|
 | Visualizer | ✅ Own implementation: audio visualizer background with its own settings and saved looks |
-| The Workshop (downloadable shaders, presets, corrections, fonts) | 🟡 **Library** instead: you import your own files; there's no download catalogue |
+| The Workshop (downloadable shaders, presets, corrections, fonts) | 🟡 **Workshop** (Library › Workshop): a catalogue of downloadable looks, EQ presets and a GraphicEQ curve, served from this repo's `workshop/` folder (or any https address you choose). Data files only, checked by size and sha256 before install. No shaders or fonts: a downloaded shader is code, and fonts carry licences. You can still import your own fonts in Library |
 | AutoMix | 🟡 **Transitions**: softens each track's start. It doesn't beat-match or blend two songs, so it's not AutoMix |
 | Lighter Sing voice model | 🟡 You can load your own smaller model in Library; no smaller model is included |
 | Volume slider in the player | ✅ |
