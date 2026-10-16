@@ -1,7 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Base file is byte-identical to upstream v0.21.1 (a08b38b); new integration below.
 #import <CoreText/SFNTLayoutTypes.h>
 #import "Core/SGCore.h"
 #import "SGRTokens.h"
 #import "SGRAccent.h"
+#import "SGRTrackAccent.h"
 
 const CGFloat SGRSideMargin = 16;
 const CGFloat SGRGrid = 8;
@@ -33,7 +36,7 @@ UIColor *SGRTertiary(void) {
 
 // Read per call: the accent is stored as it is picked, and the colour row reads it the same way.
 UIColor *SGRAccent(void) {
-    return SGRAccentColor() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
+    return SGRTrackAccentColor() ?: SGRAccentColor() ?: [UIColor colorWithRed:0x1E / 255.0 green:0xD7 / 255.0 blue:0x60 / 255.0 alpha:1];
 }
 
 UIColor *SGRNeutralField(void) {
