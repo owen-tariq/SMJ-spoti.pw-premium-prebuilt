@@ -3,6 +3,7 @@
 #import "SGSingAudio.h"
 #import "SGSingFormat.h"
 #import "SGSingModel.h"
+#import "SGSingResample.h"
 #import "SGStemWorker.h"
 #import "Shared/Audio/SGAudioPipeline.h"
 #import "Shared/Player/PlayerState.h"
@@ -35,6 +36,8 @@ static double downstreamLatency(void) {
 // attached. Neither endpoint can observe freed storage, including cancellation during model load.
 @interface SGSingSession : NSObject
 @property (nonatomic) SGSingAudio *audio;
+// The worker's way between the source's rate and the model's, both NULL at the model's rate; kept until Finished.
+@property (nonatomic) SGSingResampler *toModel, *fromModel;
 @property (nonatomic) void *worker;
 @property (nonatomic) BOOL attached, finished, retiring, loading, ready;
 @property (nonatomic) CFTimeInterval attachDeadline;
@@ -45,6 +48,7 @@ static double downstreamLatency(void) {
 - (void)dealloc {
     NSCAssert(!_attached && _finished, @"Sing endpoints must stop before releasing their storage");
     SGSingAudioDestroy(_audio);
+    SGSingResamplerDestroy(_toModel); SGSingResamplerDestroy(_fromModel);
 }
 @end
 
@@ -104,6 +108,22 @@ static void workerStatus(void *context, int32_t status) {
     SGSingSession *session = (__bridge SGSingSession *)context;
     dispatch_async(dispatch_get_main_queue(), ^{ [sg_controller workerStatus:status session:session]; });
     if (status == SGStemFinished) CFRelease(context);
+}
+static bool resample(void *resampler, const float *in, uint32_t inFrames, float *out, uint32_t outFrames) {
+    return SGSingResamplerProcess(resampler, in, inFrames, out, outFrames);
+}
+// The rate Spotify's local source decodes at, when there is one and Sing takes it; otherwise the model's, which
+// a graph that turns out to be at another supported rate replaces (attachSession) once it is there.
+static double sourceRate(AudioStreamBasicDescription *format) {
+    *format = (AudioStreamBasicDescription){0};
+    return SGAudioPipelineSourceFormat(format) && SGSingSupportedRate(format->mSampleRate) && format->mChannelsPerFrame == 2 ?
+        format->mSampleRate : SGSingSampleRate;
+}
+// Why this source will not do, naming what it is when that is known; every answer names the rates Sing takes.
+static NSString *unsupportedSource(bool known, AudioStreamBasicDescription format) {
+    if (!known) return @"Sing needs a supported Spotify audio source with local stereo playback at 44.1, 48, 88.2 or 96 kHz. Start a song on this iPhone and try again.";
+    return [NSString stringWithFormat:@"Sing cannot use this audio source: Spotify is playing %g kHz %u-channel audio, and Sing needs stereo at 44.1, 48, 88.2 or 96 kHz.",
+            format.mSampleRate / 1000, (unsigned)format.mChannelsPerFrame];
 }
 
 @implementation SGSingController
@@ -189,19 +209,29 @@ static void workerStatus(void *context, int32_t status) {
     // Loading/pausing the player is not a request to turn Sing off. Model preparation is
     // independent of the render callback and can complete before the user presses Play.
     if (state.isLoading) { [self publish:SGSingPreparing explanation:nil]; [self startTimer]; return; }
+    // The render side is sized for the source's rate; only the worker's windows go through the model's.
+    AudioStreamBasicDescription format;
+    SGSingGeometry geometry;
+    if (!SGSingGeometryAt(sourceRate(&format), &geometry)) return;
     SGSingSession *session = [SGSingSession new];
     session.finished = YES;
     session.track = trackOf(state);
-    session.audio = SGSingAudioCreate((SGAudioStamp){++_generation, SGSingTrackIdentifier(session.track), 0, 1, 0},
-                                      SGSingWindowFrames, SGSingHopFrames, _level);
-    if (!session.audio) { _blockedTrack = session.track; [self publish:SGSingFailed explanation:@"There is not enough memory to start Sing."]; return; }
+    session.audio = SGSingAudioCreate((SGAudioStamp){++_generation, SGSingTrackIdentifier(session.track), 0, 1, 0}, geometry, _level);
+    if (geometry.sampleRate != SGSingSampleRate) {
+        session.toModel = SGSingResamplerCreate(geometry.sampleRate, SGSingSampleRate);
+        session.fromModel = SGSingResamplerCreate(SGSingSampleRate, geometry.sampleRate);
+    }
+    if (!session.audio || (geometry.sampleRate != SGSingSampleRate && (!session.toModel || !session.fromModel))) {
+        _blockedTrack = session.track; [self publish:SGSingFailed explanation:@"There is not enough memory to start Sing."]; return;
+    }
+    if (geometry.sampleRate != SGSingSampleRate) SGLog(@"Sing resampling a %u Hz source to the model's %u Hz", geometry.sampleRate, (unsigned)SGSingSampleRate);
     SGSingStreamSetModelReady(stream(session), false);
     _session = session;
     [self prepareNextTrack:state];
     session.finished = NO;
     void *context = (__bridge_retained void *)session;
-    session.worker = SGStemWorkerStart(context, _model.fileSystemRepresentation, SGSingWindowFrames, SGSingHopFrames,
-                                       readPCM, writePCM, workerStatus);
+    session.worker = SGStemWorkerStart(context, _model.fileSystemRepresentation, geometry.windowFrames, geometry.hopFrames,
+                                       resample, session.toModel, session.fromModel, readPCM, writePCM, workerStatus);
     if (!session.worker) {
         CFRelease(context); session.finished = YES; _session = nil; _blockedTrack = session.track;
         [self publish:SGSingFailed explanation:@"The local voice model could not start."];
@@ -214,6 +244,16 @@ static void workerStatus(void *context, int32_t status) {
     if ((!session.loading && !session.ready) || session.attached || session.retiring || _interrupted) return;
     SPTPlayerState *state = SGPlayerState();
     if (state.isLoading || ![session.track isEqualToString:trackOf(state)]) return;
+    // A graph that came up at another rate Sing takes gets a generation sized for it: this one retires, and the
+    // next poll starts the new one around the same warm model. A graph not there yet is waited for below.
+    AudioStreamBasicDescription format = {0};
+    if (SGAudioPipelineSourceFormat(&format) && SGSingSupportedRate(format.mSampleRate) && format.mChannelsPerFrame == 2 &&
+        format.mSampleRate != SGSingAudioSampleRate(session.audio)) {
+        SGLog(@"Sing source at %g Hz, generation sized for %u Hz: starting over at the source's rate", format.mSampleRate, SGSingAudioSampleRate(session.audio));
+        [self stop:YES unload:NO];
+        [self publish:SGSingPreparing explanation:nil];
+        return;
+    }
     SGSingAudioSetClock(session.audio, SGSingSourcePosition(state), SGSingTrackIdentifier(session.track));
     SGSingAudioSetLatency(session.audio, downstreamLatency());
     SGSingStreamPause(stream(session), notPlaying(state));
@@ -230,8 +270,11 @@ static void workerStatus(void *context, int32_t status) {
             SGLog(@"Sing waiting for the local playback graph");
         }
         if (now < session.attachDeadline) { [self publish:SGSingPreparing explanation:nil]; return; }
+        AudioStreamBasicDescription actual = {0};
+        bool known = SGAudioPipelineSourceFormat(&actual);
+        SGLog(@"Sing could not attach: source %@, %g Hz, %u channels", known ? @"known" : @"unknown", actual.mSampleRate, (unsigned)actual.mChannelsPerFrame);
         _blockedTrack = session.track; [self stop:YES unload:NO];
-        [self publish:SGSingFailed explanation:@"Sing needs a supported Spotify audio source with local 44.1 kHz stereo playback. Start a song on this iPhone and try again."];
+        [self publish:SGSingFailed explanation:unsupportedSource(known, actual)];
     }
 }
 - (void)workerStatus:(int32_t)status session:(SGSingSession *)session {
