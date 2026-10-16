@@ -44,7 +44,10 @@ static NSString *modelPath = @"fixture";
 NSString *SGSingModelPath(void) { return modelPath; }
 static void modelChanged(void) { [NSNotificationCenter.defaultCenter postNotificationName:SGSingModelDidChangeNotification object:nil]; }
 void SGStemWorkerPurge(void) { purges++; }
-void *SGStemWorkerStart(void *context, const char *path, uint32_t windowFrames, uint32_t hopFrames, SGStemRead read, SGStemWrite write, SGStemStatus status) {
+void *SGStemWorkerStart(void *context, const char *path, uint32_t windowFrames, uint32_t hopFrames, SGStemResample resample,
+                        void *toModel, void *fromModel, SGStemRead read, SGStemWrite write, SGStemStatus status) {
+    // The fixture's source is at the model's rate: the render side is sized for it and nothing is resampled.
+    assert(windowFrames == SGSingWindowFrames && hopFrames == SGSingHopFrames && resample && !toModel && !fromModel);
     assert(starts < 24); unsigned n = starts++;
     jobs[n].context = context; jobs[n].status = status;
     return &jobs[n];

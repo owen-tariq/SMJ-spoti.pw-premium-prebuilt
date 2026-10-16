@@ -47,6 +47,8 @@ NSArray<SGModRow *> *SGRAppearanceRows(void) {
                                             ^(double value) { SGSetInt(SGRKeyAccentIntensity, lround(value)); }, percent);
     SGModRow *glassTiles = SGOptionRow(@"Home shortcuts on glass", @"Each shortcut tile as glass tinted with its cover's colour, in place of the solid tint.", SGRKeyHomeGlassTiles);
     SGModRow *djLook = SGOptionRow(@"DJ card in the player's look", @"The DJ card on an artwork field with glass inside its control, like the redesigned player.", SGRKeyHomeDJPlayerLook);
+    SGModRow *collapsingTitle = SGOptionRow(@"Home title collapses on scroll", @"The large title gives way to a small centred one over a hairline as Home scrolls, like the Music app.", SGRKeyHomeCollapsingTitle);
+    SGModRow *shelvesOnly = SGOptionRow(@"Home shelves only", @"The shortcuts grid and the DJ go too, so Home begins with its first shelf, like the Music app's Top Picks.", SGRKeyHomeShelvesOnly);
     return @[
         SGWithSymbol(follows, @"photo.artframe"),
         SGWithSymbol(volume, @"speaker.wave.2"),
@@ -55,5 +57,7 @@ NSArray<SGModRow *> *SGRAppearanceRows(void) {
         SGWithSymbol(accentIntensity, @"slider.horizontal.3"),
         SGWithSymbol(glassTiles, @"square.grid.2x2"),
         SGWithSymbol(djLook, @"waveform.circle"),
+        SGWithSymbol(collapsingTitle, @"textformat.size.smaller"),
+        SGWithSymbol(shelvesOnly, @"rectangle.grid.1x2"),
     ];
 }

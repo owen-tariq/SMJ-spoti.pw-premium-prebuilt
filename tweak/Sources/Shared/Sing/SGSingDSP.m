@@ -22,6 +22,9 @@ void SGSingMixerProcess(SGSingMixer *m, const float *original, const float *voca
     for (uint32_t i = 0; i < frames; i++) {
         if (m->remaining) {
             m->gain += m->step;
+            // The step's rounding adds up over a ramp (11,520 steps of a 120 ms bypass at 96 kHz): never past
+            // the target, which would put vocals back in with the wrong sign for a few samples.
+            if (m->step > 0 ? m->gain > m->targetGain : m->gain < m->targetGain) m->gain = m->targetGain;
             if (!--m->remaining) m->gain = m->targetGain;
         }
         for (unsigned c = 0; c < 2; c++) {

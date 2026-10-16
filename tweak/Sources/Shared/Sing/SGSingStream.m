@@ -14,7 +14,7 @@ enum { kForwardPacketsPerRender = 8 };
 struct SGSingStream {
     SGAudioStamp origin;
     uint64_t captured, presented, forwarded;
-    uint32_t window, hop;
+    uint32_t sampleRate, window, hop, reserve;
     SGSingTimeline *timeline;
     SGAudioRingBuffer *input, *output;
     float source[SGSingStreamPacketFrames * 2];
@@ -27,18 +27,21 @@ struct SGSingStream {
     _Atomic uint64_t queued, publishedPresented, publishedCaptured, readyFrames;
 };
 
-SGSingStream *SGSingStreamCreate(SGAudioStamp origin, uint32_t window, uint32_t hop, float level) {
-    if (window != SGSingWindowFrames || hop < window / 2 || hop > window * 3 / 4 || !origin.generation) return NULL;
+SGSingStream *SGSingStreamCreate(SGAudioStamp origin, SGSingGeometry g, float level) {
+    uint32_t window = g.windowFrames, hop = g.hopFrames;
+    if (!SGSingSupportedRate(g.sampleRate) || !window || window > SGSingMaxWindowFrames || hop < window / 2 || hop > window * 3 / 4 ||
+        !g.reserveFrames || g.reserveFrames >= hop || g.timelineFrames < window * 2 + hop + SGSingStreamMaximumRenderFrames ||
+        g.timelineFrames > SGSingMaxTimelineFrames || !origin.generation) return NULL;
     SGSingStream *s = calloc(1, sizeof *s);
     if (!s) return NULL;
     s->presented = origin.sourceFrame; atomic_store(&s->publishedPresented, origin.sourceFrame);
     atomic_store(&s->publishedCaptured, origin.sourceFrame);
-    s->origin = origin; s->captured = origin.sourceFrame; s->window = window; s->hop = hop;
+    s->origin = origin; s->captured = origin.sourceFrame; s->sampleRate = g.sampleRate; s->window = window; s->hop = hop; s->reserve = g.reserveFrames;
     atomic_store(&s->modelReady, true);
     // Start with a full window of ready vocals (two completed hops). The first inference
     // duration cannot predict the next worker scheduling delay. Less overlap reduces repeated
     // inference work; the reserve still covers a full future hop before vocal reduction begins.
-    s->timeline = SGSingTimelineCreate(SGSingTimelineFrames, window);
+    s->timeline = SGSingTimelineCreate(g.sampleRate, g.timelineFrames, window);
     s->input = SGAudioRingCreate(kInputPackets, SGSingStreamPacketFrames, 2);
     s->output = SGAudioRingCreate(kOutputHops, hop, 2);
     s->vocals = calloc((size_t)hop * 2, sizeof(float));
@@ -54,6 +57,7 @@ void SGSingStreamDestroy(SGSingStream *s) {
     SGAudioRingDestroy(s->input); SGAudioRingDestroy(s->output);
     free(s->vocals); free(s);
 }
+uint32_t SGSingStreamSampleRate(const SGSingStream *s) { return s->sampleRate; }
 void SGSingStreamPause(SGSingStream *s, bool paused) { atomic_store(&s->paused, paused); }
 void SGSingStreamSetModelReady(SGSingStream *s, bool ready) { atomic_store(&s->modelReady, ready); }
 static void bypass(SGSingStream *s, SGSingStopReason reason) {
@@ -126,7 +130,7 @@ int32_t SGSingStreamRender(SGSingStream *s, uint32_t frames, float *pcm, SGSingS
     uint32_t minimum = queued < frames ? frames - (uint32_t)queued : 0;
     uint32_t wanted = frames;
     if (queued < target) wanted += target - queued < frames ? target - (uint32_t)queued : frames;
-    uint32_t spare = available > SGSingReserveFrames ? available - SGSingReserveFrames : 0;
+    uint32_t spare = available > s->reserve ? available - s->reserve : 0;
     if (wanted > spare) wanted = spare;
     if (wanted < minimum) wanted = minimum;
     if (wanted > writable) wanted = writable;

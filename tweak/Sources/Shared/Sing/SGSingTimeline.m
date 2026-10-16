@@ -6,7 +6,8 @@
 
 struct SGSingTimeline {
     float *dry, *vocals;
-    uint32_t capacity, reserve;
+    uint32_t sampleRate, capacity, reserve;
+    uint32_t bypassReserve, recoveryLimit; // 120 ms and SGSingRecoverySeconds at sampleRate
     uint64_t captured, processed, consumed;
     uint64_t recoveryStart, recoveredAt;
     float level;
@@ -15,26 +16,29 @@ struct SGSingTimeline {
     SGSingMixer mixer;
 };
 
-SGSingTimeline *SGSingTimelineCreate(uint32_t capacity, uint32_t reserve) {
-    if (!capacity || capacity > SGSingTimelineFrames || !reserve || reserve > capacity) return NULL;
+SGSingTimeline *SGSingTimelineCreate(uint32_t sampleRate, uint32_t capacity, uint32_t reserve) {
+    if (!SGSingSupportedRate(sampleRate) || !capacity || capacity > SGSingMaxTimelineFrames || !reserve || reserve > capacity) return NULL;
     SGSingTimeline *t = calloc(1, sizeof *t);
     if (!t) return NULL;
     t->dry = calloc((size_t)capacity * 2, sizeof(float));
     t->vocals = calloc((size_t)capacity * 2, sizeof(float));
     if (!t->dry || !t->vocals) { SGSingTimelineDestroy(t); return NULL; }
-    t->capacity = capacity; t->reserve = reserve;
+    t->sampleRate = sampleRate; t->capacity = capacity; t->reserve = reserve;
+    t->bypassReserve = sampleRate * 120 / 1000;
+    t->recoveryLimit = sampleRate * SGSingRecoverySeconds;
     return t;
 }
 void SGSingTimelineDestroy(SGSingTimeline *t) {
     if (t) { free(t->dry); free(t->vocals); free(t); }
 }
+uint32_t SGSingTimelineRecoveryLimit(const SGSingTimeline *t) { return t->recoveryLimit; }
 void SGSingTimelineBegin(SGSingTimeline *t, SGAudioStamp origin, float level) {
     t->origin = origin;
     t->captured = t->processed = t->consumed = origin.sourceFrame;
     t->recoveryStart = UINT64_MAX;
     t->state = SGSingTimelinePreparing;
     t->level = SGSingClampLevel(level);
-    SGSingMixerInit(&t->mixer, SGSingSampleRate, 1);
+    SGSingMixerInit(&t->mixer, t->sampleRate, 1);
 }
 void SGSingTimelineSetLevel(SGSingTimeline *t, float level) {
     t->level = SGSingClampLevel(level);
@@ -42,7 +46,7 @@ void SGSingTimelineSetLevel(SGSingTimeline *t, float level) {
 }
 void SGSingTimelineBypass(SGSingTimeline *t) {
     if (t->state == SGSingTimelineIdle || t->state == SGSingTimelineDraining) return;
-    if (t->state == SGSingTimelinePreparing) SGSingMixerInit(&t->mixer, SGSingSampleRate, 1);
+    if (t->state == SGSingTimelinePreparing) SGSingMixerInit(&t->mixer, t->sampleRate, 1);
     else if (t->state == SGSingTimelineActive) SGSingMixerBypass(&t->mixer);
     t->state = t->captured == t->consumed ? SGSingTimelineIdle : SGSingTimelineDraining;
 }
@@ -103,7 +107,7 @@ uint32_t SGSingTimelineRead(SGSingTimeline *t, float *out, uint32_t frames) {
     if (t->state == SGSingTimelinePreparing) {
         uint64_t ready = SGSingTimelineReadyFrames(t);
         // Keep enough aligned vocals to finish a 120 ms bypass even if the worker stops now.
-        if (ready >= t->reserve && ready >= SGSingReserveFrames + (uint64_t)frames) {
+        if (ready >= t->reserve && ready >= t->bypassReserve + (uint64_t)frames) {
             SGSingMixerSetLevel(&t->mixer, t->level);
             t->state = SGSingTimelineActive;
         }
@@ -111,17 +115,17 @@ uint32_t SGSingTimelineRead(SGSingTimeline *t, float *out, uint32_t frames) {
     // An isolated late window gets a fresh recovery budget after sustained playback.
     // Brief returns to Active must not give an overloaded worker unlimited dry/wet cycles.
     if (t->state == SGSingTimelineActive && t->recoveryStart != UINT64_MAX &&
-        t->consumed - t->recoveredAt >= SGSingRecoveryLimitFrames) t->recoveryStart = UINT64_MAX;
-    if (t->state == SGSingTimelineActive && SGSingTimelineReadyFrames(t) <= SGSingReserveFrames + (uint64_t)frames) {
+        t->consumed - t->recoveredAt >= t->recoveryLimit) t->recoveryStart = UINT64_MAX;
+    if (t->state == SGSingTimelineActive && SGSingTimelineReadyFrames(t) <= t->bypassReserve + (uint64_t)frames) {
         SGSingMixerBypass(&t->mixer);
         if (t->recoveryStart == UINT64_MAX) t->recoveryStart = t->consumed;
         t->state = SGSingTimelineRecovering;
     }
     if (t->state == SGSingTimelineRecovering) {
         uint64_t ready = SGSingTimelineReadyFrames(t);
-        if (t->consumed - t->recoveryStart >= SGSingRecoveryLimitFrames) {
+        if (t->consumed - t->recoveryStart >= t->recoveryLimit) {
             SGSingTimelineBypass(t);
-        } else if (ready >= t->reserve && ready > SGSingReserveFrames + (uint64_t)frames) {
+        } else if (ready >= t->reserve && ready > t->bypassReserve + (uint64_t)frames) {
             // Rebuild the same reserve required on first activation. Half a reserve let
             // a single late result toggle Sing on/off every time the worker fell behind.
             SGSingMixerSetLevel(&t->mixer, t->level);
@@ -142,7 +146,7 @@ uint32_t SGSingTimelineRead(SGSingTimeline *t, float *out, uint32_t frames) {
             result[0] = dry[0]; result[1] = dry[1];
             // A short last vocal packet can exhaust coverage inside a large render quantum.
             // Keep the mixer's next recovery ramp anchored to the dry gain actually emitted.
-            if (t->mixer.gain != 1 || t->mixer.remaining) SGSingMixerInit(&t->mixer, SGSingSampleRate, 1);
+            if (t->mixer.gain != 1 || t->mixer.remaining) SGSingMixerInit(&t->mixer, t->sampleRate, 1);
         }
         out[i*2] = result[0]; out[i*2+1] = result[1];
     }

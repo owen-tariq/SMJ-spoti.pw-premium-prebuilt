@@ -11,7 +11,9 @@ typedef enum {
 } SGSingStopReason;
 typedef int32_t (*SGSingSourceRead)(void *context, uint32_t frames, float *stereo);
 
-SGSingStream *SGSingStreamCreate(SGAudioStamp origin, uint32_t windowFrames, uint32_t hopFrames, float level);
+// geometry is the source rate's (SGSingGeometryAt): every frame count here and in the packets is at that rate.
+SGSingStream *SGSingStreamCreate(SGAudioStamp origin, SGSingGeometry geometry, float level);
+uint32_t SGSingStreamSampleRate(const SGSingStream *stream);
 void SGSingStreamDestroy(SGSingStream *stream);
 // Any thread; pause preserves this generation. Bypass is terminal and drains its original PCM.
 void SGSingStreamPause(SGSingStream *stream, bool paused);

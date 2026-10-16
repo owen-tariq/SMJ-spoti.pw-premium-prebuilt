@@ -21,6 +21,10 @@
 // The DJ stays without its heading ("Your own personal DJ" over a card that says DJ): the stack is a plain
 // UIStackView, so the heading's LazyElementView is hidden before the cell is measured and the stack closes up.
 //
+// Shelves only (SGRKeyHomeShelvesOnly, off unless asked for, read on every pass): the shortcuts grid and the DJ
+// go the same way as the rest, so the feed begins with its first shelf, the way the Music app's Home begins
+// with Top Picks. Nothing else changes: the same two kinds, told to drop rather than keep.
+//
 // A dropped section still leaves the list's 24pt gap on either side of it (the shortcuts end at 216, the
 // next section starts at 240, 01.txt:30, :325): the spacing is the list layout's, which a cell's height
 // does not reach. Taking the sections out of the casita feed itself is what would close it.
@@ -67,18 +71,23 @@ static void logOnce(NSString *what) {
 }
 
 // The shortcuts grid names no identifier; episode cards and whatever else comes as a bare list do.
+static BOOL shelvesOnly(void) {
+    return SGHidden(SGRKeyHomeShelvesOnly);
+}
+
 static SGRHomeKind gridKind(UICollectionView *grid) {
     if (grid.accessibilityIdentifier.length) return SGRHomeKindDrop;
+    SGRHomeKind shortcuts = shelvesOnly() ? SGRHomeKindDrop : SGRHomeKindKeep;
     UIView *cell = grid.visibleCells.firstObject;
     // A grid the list sized before it laid its own cells out: nothing but the shortcuts has come as one.
-    if (!cell) return SGRHomeKindKeep;
-    return contentNames(cell.subviews.firstObject, @"Home_AnchorsAndShortcutsKit") ? SGRHomeKindKeep : SGRHomeKindDrop;
+    if (!cell) return shortcuts;
+    return contentNames(cell.subviews.firstObject, @"Home_AnchorsAndShortcutsKit") ? shortcuts : SGRHomeKindDrop;
 }
 
 // A LazyElementView names the element it will hold before it holds it.
 static SGRHomeKind stackKind(UIStackView *stack) {
     for (UIView *part in stack.arrangedSubviews) {
-        if ([NSStringFromClass(part.class) containsString:@"Discovery_DJElementKit"]) return SGRHomeKindKeep;
+        if ([NSStringFromClass(part.class) containsString:@"Discovery_DJElementKit"]) return shelvesOnly() ? SGRHomeKindDrop : SGRHomeKindKeep;
     }
     return stack.arrangedSubviews.count >= 2 ? SGRHomeKindDrop : SGRHomeKindPending;
 }

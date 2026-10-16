@@ -168,3 +168,39 @@ guard, and a misleading row subtitle). No iOS compile here.
   import a model folder, switch on, Sing still works.
 - Home glass tiles and DJ card: screenshots, please; both are blind restyles.
 - Hook report: open it once now on 9.1.88 to record the baseline (Copy report).
+
+# Batch C: Sing at any rate, tab bar minimizing, Apple-look polish (October 16, 2026)
+
+Bug fix. Sing (karaoke) refused to start unless Spotify decoded at exactly 44.1 kHz stereo,
+so lossless tracks (48 kHz and up) always failed with "needs 44.1 kHz". The render-side chain
+is now rate-agnostic (44.1, 48, 88.2, 96 kHz; window/hop/reserve/timeline scale with the
+rate), and only the off-render worker resamples each 2 s window to the model's 44.1 kHz and
+back, with a deterministic polyphase sinc resampler (tests: 1 kHz 48 to 44.1 kHz, 0.0016 %
+RMS error; tones at or above 96 dB SNR). A separate ramp overshoot bug in the mixer surfaced
+at 96 kHz and is fixed. The failure message now names the actual rate and channel count.
+The Swift side of the worker could not be compiled here; the C tests pass at all three rates.
+
+Bug fix. The tab bar never minimized on scroll: UIKit's minimize behaviour belongs to a
+UITabBarController, and the default redesign bar is a bare UITabBar, so nothing asked for it
+(and it only exists on iOS 26). New: a fallback minimizer on any iOS, on by default
+(Navbar > Minimize on scroll). After about 24 pt of downward scroll the bar folds into a
+glass circle holding the selected tab's glyph in the accent colour at the leading edge, Apple
+Music style; any upward scroll or the top brings it back, so does a tap. Home's feed is named
+to the bar directly instead of guessed, since its vertical list shares a class with its
+horizontal shelves. The pill's vertical position differs between iOS 26 (62 pt platter) and
+earlier (49 pt row) by @available; needs a screenshot.
+
+New, all off by default: Home title collapses on scroll into a small centred title over a
+hairline (Appearance); Home shelves only, which drops the shortcuts grid and the DJ card so
+Home starts with its first shelf like Apple Music (Appearance); tinted Play and Shuffle on
+album and playlist headers, grey capsule with accent glyph and word (Albums > Header).
+
+New: Audio visualizer settings under the background choice: Intensity, Motion, Glow count,
+Colours (From artwork / Accent colour / Look), a Look picker reading the Library's imported
+.json looks, and Save current as look. Sleep timer card on the Player page: 15/30/45/60/90
+min or End of track, pauses through Spotify's own player; no fade, since the tweak has no
+player-volume API and system volume is left alone; iOS may delay it in the background.
+
+Not verified here: iOS compile (first Build IPA is the test), the pill's alignment, the
+Home title crossfade on narrow devices and large text, Sing on real 48/96 kHz playback and
+the resampler's CPU cost on older phones.

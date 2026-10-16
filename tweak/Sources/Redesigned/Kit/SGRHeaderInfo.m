@@ -292,9 +292,19 @@ static BOOL sameImages(NSArray<UIImage *> *a, NSArray<UIImage *> *b) {
         _trailing.stateOffSymbol = self.trailingOffSymbol;
         _trailing.stateOnSymbol = self.trailingOnSymbol;
     }
+    // The tinted look dresses Play and shuffle before they are fed, since feeding is what paints them.
+    BOOL tinted = SGHidden(SGRKeyTintedHeaderControls);
+    UIColor *fill = tinted ? SGRSolidGlassFill() : UIColor.whiteColor;
+    if (![_play.fillColor isEqual:fill]) {
+        _play.fillColor = fill;
+        [_play setNeedsLayout];
+    }
+    UIColor *shuffleColor = tinted ? SGRAccent() : SGRPrimary();
+    if (![_shuffle.glyphColor isEqual:shuffleColor]) _shuffle.glyphColor = shuffleColor;
     if (shuffle) [_shuffle feedFrom:shuffle];
     if (play) {
-        if (playColor) _play.contentColor = playColor;
+        if (tinted) _play.contentColor = SGRAccent();
+        else if (playColor) _play.contentColor = playColor;
         [_play feedFrom:play];
     }
     if (trailing) [_trailing feedFrom:trailing];

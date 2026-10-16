@@ -11,11 +11,13 @@ typedef enum {
     SGSingTimelineDraining,
     SGSingTimelineRecovering
 } SGSingTimelineState;
-enum { SGSingRecoveryLimitFrames = SGSingSampleRate * 8 };
 typedef struct SGSingTimeline SGSingTimeline;
 
-SGSingTimeline *SGSingTimelineCreate(uint32_t capacityFrames, uint32_t reserveFrames);
+// All frame counts are at sampleRate, one of SGSingSupportedRate; capacity is at most
+// SGSingMaxTimelineFrames. reserveFrames is the ready vocals needed before the vocals are reduced.
+SGSingTimeline *SGSingTimelineCreate(uint32_t sampleRate, uint32_t capacityFrames, uint32_t reserveFrames);
 void SGSingTimelineDestroy(SGSingTimeline *timeline); // both endpoints stopped
+uint32_t SGSingTimelineRecoveryLimit(const SGSingTimeline *timeline); // SGSingRecoverySeconds in frames
 // Begin also invalidates all retained audio. The caller must change generation before a seek.
 void SGSingTimelineBegin(SGSingTimeline *timeline, SGAudioStamp origin, float vocalLevel);
 void SGSingTimelineSetLevel(SGSingTimeline *timeline, float level);
@@ -25,7 +27,7 @@ uint32_t SGSingTimelineWritable(const SGSingTimeline *timeline);
 uint64_t SGSingTimelineConsumed(const SGSingTimeline *timeline);
 uint64_t SGSingTimelineQueued(const SGSingTimeline *timeline);
 uint64_t SGSingTimelineReadyFrames(const SGSingTimeline *timeline);
-// Stereo interleaved, 44.1 kHz. Reject mismatch, gap or overflow. During recovery, late output
+// Stereo interleaved at the timeline's rate. Reject mismatch, gap or overflow. During recovery, late output
 // still advances the worker cursor, but only its not-yet-audible suffix is retained.
 bool SGSingTimelineCapture(SGSingTimeline *timeline, SGAudioStamp stamp, const float *original);
 // Render owner only: copy a still-retained original prefix to the worker input queue.

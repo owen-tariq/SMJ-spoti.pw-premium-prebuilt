@@ -12,6 +12,7 @@ static uint64_t bitsOf(double value) { uint64_t bits; memcpy(&bits, &value, size
 static double valueOf(uint64_t bits) { double value; memcpy(&value, &bits, sizeof value); return value; }
 struct SGSingAudio {
     uint64_t epoch, track, origin;
+    uint32_t rate, reserve; // the source's, from the geometry it was created with
     double position;
     _Atomic uint64_t latencyBits;
     _Atomic uint64_t expectedTrack, prefetchedTrack, prefetchedFrame;
@@ -48,12 +49,12 @@ static OSStatus process(void *context, UInt32 frames, AudioBufferList *data, con
     a->time = time;
     for (UInt32 done = 0; done < frames;) {
         UInt32 count = MIN(frames - done, SGSingStreamMaximumRenderFrames);
-        // The stream pulls at most two quanta and leaves 120 ms in Spotify's queue.
-        // Counting any further ahead adds kernel reads to every audio callback for no gain.
+        // The stream pulls at most two quanta and leaves 120 ms (the geometry's reserve) in Spotify's
+        // queue. Counting any further ahead adds kernel reads to every audio callback for no gain.
         uint64_t captured = SGSingStreamCaptured(a->stream);
         uint64_t expected = atomic_load(&a->expectedTrack), prefetched = atomic_load(&a->prefetchedTrack);
         bool continuous = expected && (!prefetched || captured <= atomic_load(&a->prefetchedFrame));
-        SGAudioSourcePrefix prefix = SGAudioPipelineSourcePrefix(count * 2 + SGSingReserveFrames, continuous);
+        SGAudioSourcePrefix prefix = SGAudioPipelineSourcePrefix(count * 2 + a->reserve, continuous);
         if (prefix.boundary != UINT32_MAX && captured + prefix.boundary != a->lastBoundary && !prefetched) {
             a->lastBoundary = captured + prefix.boundary;
             atomic_store(&a->prefetchedFrame, a->lastBoundary);
@@ -78,7 +79,7 @@ static OSStatus process(void *context, UInt32 frames, AudioBufferList *data, con
             a->position = 0;
             atomic_store_explicit(&a->markerTail, ++tail, memory_order_release);
         }
-        double position = a->position + (SGSingStreamPresented(a->stream) - a->origin) / (double)SGSingSampleRate;
+        double position = a->position + (SGSingStreamPresented(a->stream) - a->origin) / (double)a->rate;
         position = fmax(a->position, position - valueOf(atomic_load(&a->latencyBits)));
         // A natural transition keeps its audio epoch. Publish track and position as one
         // snapshot so a concurrent lyrics/lock-screen read cannot mix the two songs.
@@ -90,19 +91,24 @@ static OSStatus process(void *context, UInt32 frames, AudioBufferList *data, con
     }
     return noErr;
 }
-SGSingAudio *SGSingAudioCreate(SGAudioStamp origin, uint32_t window, uint32_t hop, float level) {
+SGSingAudio *SGSingAudioCreate(SGAudioStamp origin, SGSingGeometry geometry, float level) {
     SGSingAudio *a = calloc(1, sizeof *a);
     if (!a) return NULL;
     a->epoch = atomic_fetch_add(&epoch, 1) + 1; a->origin = origin.sourceFrame;
     a->lastBoundary = UINT64_MAX;
-    a->stream = SGSingStreamCreate(origin, window, hop, level);
+    a->rate = geometry.sampleRate; a->reserve = geometry.reserveFrames;
+    a->stream = SGSingStreamCreate(origin, geometry, level);
     if (!a->stream) { free(a); return NULL; }
     return a;
 }
 SGSingStream *SGSingAudioStream(SGSingAudio *a) { return a ? a->stream : NULL; }
+uint32_t SGSingAudioSampleRate(const SGSingAudio *a) { return a ? a->rate : 0; }
 bool SGSingAudioAttach(SGSingAudio *a) {
+    // The source must be at the rate this generation was sized for: another supported rate needs a new
+    // generation (the controller makes one), an unsupported one keeps Spotify's own audio.
     AudioStreamBasicDescription format = {0};
-    if (!a || a->epoch != atomic_load(&epoch) || !SGAudioPipelineSourceFormat(&format) || format.mSampleRate != SGSingSampleRate || format.mChannelsPerFrame != 2 ||
+    if (!a || a->epoch != atomic_load(&epoch) || !SGAudioPipelineSourceFormat(&format) || format.mSampleRate != a->rate ||
+        !SGSingSupportedRate(format.mSampleRate) || format.mChannelsPerFrame != 2 ||
         format.mFormatID != kAudioFormatLinearPCM || format.mBitsPerChannel != 32 || format.mBytesPerFrame != sizeof(float) ||
         !(format.mFormatFlags & kAudioFormatFlagIsFloat) || !(format.mFormatFlags & kAudioFormatFlagIsNonInterleaved)) return false;
     return SGAudioPipelineSourceCanReadAhead() && SGAudioPipelineSetSourceProcessor(process, a);

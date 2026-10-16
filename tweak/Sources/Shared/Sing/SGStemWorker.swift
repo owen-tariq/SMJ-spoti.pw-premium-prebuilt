@@ -1,11 +1,14 @@
 // Sing's worker (SGStemWorker.h): a task per playback generation that reads source packets from the C
 // stream, runs whole windows through the separator, and hands each finished hop of vocals back. The loaded
 // model outlives the task that loaded it by a minute, so a seek or the next song does not load it again.
+// The windows are the source's (two seconds at its rate); a source not at the model's 44.1 kHz has each
+// window resampled to the model's two seconds and its vocals back, through the C resampler the owner made.
 import Foundation
 
 public typealias StemRead = @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<Float>?, UnsafeMutablePointer<UInt64>?) -> Int32
 public typealias StemWrite = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<Float>?, UInt32, UInt64, UInt64, UInt64, UInt32) -> Int32
 public typealias StemStatus = @convention(c) (UnsafeMutableRawPointer?, Int32) -> Void
+public typealias StemResample = @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<Float>?, UInt32, UnsafeMutablePointer<Float>?, UInt32) -> Bool
 
 // SGStemWorker.h's SGStemLoading...SGStemFailed, and the stream's packet size (SGSingStreamPacketFrames).
 private enum StemState: Int32 { case loading = 1, ready, finished, failed }
@@ -74,12 +77,16 @@ private actor SGStemModels {
 private final class SGStemJob: @unchecked Sendable {
     let context: UnsafeMutableRawPointer?
     let read: StemRead, write: StemWrite, status: StemStatus
+    // Both resamplers, or neither: the source is then at the model's rate and its windows go in as they are.
+    let resample: StemResample?, toModel: UnsafeMutableRawPointer?, fromModel: UnsafeMutableRawPointer?
     private let lock = NSLock() // cancellation/control only, never an audio callback
     private var unload = false
     var task: Task<Void, Never>?
 
-    init(context: UnsafeMutableRawPointer?, read: @escaping StemRead, write: @escaping StemWrite, status: @escaping StemStatus) {
-        self.context = context; self.read = read; self.write = write; self.status = status
+    init(context: UnsafeMutableRawPointer?, resample: StemResample?, toModel: UnsafeMutableRawPointer?, fromModel: UnsafeMutableRawPointer?,
+         read: @escaping StemRead, write: @escaping StemWrite, status: @escaping StemStatus) {
+        self.context = context; self.resample = resample; self.toModel = toModel; self.fromModel = fromModel
+        self.read = read; self.write = write; self.status = status
     }
     func cancel(unload: Bool) {
         lock.lock(); self.unload = self.unload || unload; lock.unlock()
@@ -92,14 +99,42 @@ private final class SGStemJob: @unchecked Sendable {
     }
     private func report(_ value: StemState) { status(context, value.rawValue) }
 
+    // One source window's vocals: through the model's rate and back when the source is not at it. Each window
+    // is converted on its own, to exactly the model's two seconds and back to exactly the source's, so the
+    // timeline cannot drift; the few edge samples that leaves imprecise are the ones the overlap-add in
+    // SGStemWindowProcessor weights down to nothing.
+    private func vocals(of pcm: [Float], with separator: SGStemSeparator) async throws -> [Float] {
+        guard let resample, let toModel, let fromModel else { return try await separator.vocals(for: pcm) }
+        let modelFrames = separator.windowFrames, sourceFrames = pcm.count / 2
+        var atModel = [Float](repeating: 0, count: modelFrames * 2)
+        let converted = pcm.withUnsafeBufferPointer { input in
+            atModel.withUnsafeMutableBufferPointer { output in
+                resample(toModel, input.baseAddress, UInt32(sourceFrames), output.baseAddress, UInt32(modelFrames))
+            }
+        }
+        guard converted else { throw SGStemError.invalidInput }
+        let separated = try await separator.vocals(for: atModel)
+        var atSource = [Float](repeating: 0, count: pcm.count)
+        let restored = separated.withUnsafeBufferPointer { input in
+            atSource.withUnsafeMutableBufferPointer { output in
+                resample(fromModel, input.baseAddress, UInt32(modelFrames), output.baseAddress, UInt32(sourceFrames))
+            }
+        }
+        guard restored else { throw SGStemError.invalidOutput }
+        return atSource
+    }
+
     func run(path: String, window size: Int, hop: Int) async {
         report(.loading)
         do {
             let separator = try await SGStemModels.shared.acquire(path: path)
             try Task.checkCancellation()
-            guard separator.windowFrames == size else { throw SGStemError.invalidModel }
-            let worker = try SGStemWindowProcessor(chunkSamples: size, hopSamples: hop) { pcm in
-                try await separator.vocals(for: pcm)
+            let converting = toModel != nil || fromModel != nil
+            guard converting ? (resample != nil && toModel != nil && fromModel != nil) : separator.windowFrames == size else {
+                throw SGStemError.invalidModel
+            }
+            let worker = try SGStemWindowProcessor(chunkSamples: size, hopSamples: hop) { [self] pcm in
+                try await vocals(of: pcm, with: separator)
             }
             report(.ready)
             let overlap = size - hop
@@ -163,9 +198,12 @@ private final class SGStemJob: @unchecked Sendable {
 
 @_cdecl("SGStemWorkerStart")
 public func sgStemWorkerStart(_ context: UnsafeMutableRawPointer?, _ path: UnsafePointer<CChar>?, _ windowFrames: UInt32,
-                              _ hopFrames: UInt32, _ read: StemRead?, _ write: StemWrite?, _ status: StemStatus?) -> UnsafeMutableRawPointer? {
+                              _ hopFrames: UInt32, _ resample: StemResample?, _ toModel: UnsafeMutableRawPointer?,
+                              _ fromModel: UnsafeMutableRawPointer?, _ read: StemRead?, _ write: StemWrite?,
+                              _ status: StemStatus?) -> UnsafeMutableRawPointer? {
     if #available(iOS 15.0, *), let path, let read, let write, let status {
-        let job = SGStemJob(context: context, read: read, write: write, status: status)
+        let job = SGStemJob(context: context, resample: resample, toModel: toModel, fromModel: fromModel,
+                            read: read, write: write, status: status)
         let modelPath = String(cString: path)
         job.task = Task.detached(priority: .userInitiated) {
             await job.run(path: modelPath, window: Int(windowFrames), hop: Int(hopFrames))

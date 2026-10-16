@@ -17,6 +17,15 @@ typedef struct {
     float low, mid, high, rms;   // 0...1, the latest the owner has read
 } SGRVisualizerLevels;
 
+// How the owner wants the glows drawn, over and above the colours and the levels.
+typedef struct {
+    float intensity;   // 0.5...2: each band is scaled by this before it swells its glow; 1 is the level as read
+    float motion;      // 0.25...2: how fast the orbits drift and the ripple runs; 1 is the pace drawn before
+    int glowCount;     // 2...4 glows, their colours taken round from the palette; 0 draws one glow per colour given
+} SGRVisualizerLook;
+// 1, 1 and 0: the picture as it was before looks.
+extern const SGRVisualizerLook SGRVisualizerLookDefault;
+
 // Starts compiling the shaders, if it has not started, so the first layer draws at once.
 void SGRVisualizerPrepare(void);
 // NO where this device has no Metal, or the shaders failed to compile.
@@ -27,6 +36,9 @@ BOOL SGRVisualizerAvailable(void);
 @property (nonatomic, copy) NSArray<UIColor *> *colors;
 // Set each frame by the owner, usually from `willDraw`.
 @property (nonatomic) SGRVisualizerLevels levels;
+// Intensity, motion and glow count (PlayerVisualizer.x reads them from the Player page or a Library look).
+// Out-of-range values are brought into range. Starts at SGRVisualizerLookDefault.
+@property (nonatomic) SGRVisualizerLook look;
 // Paused draws a still frame once and then nothing; the owner pauses it out of sight and while the app is
 // not in front. Starts paused.
 @property (nonatomic) BOOL paused;

@@ -9,21 +9,35 @@
 // while the page it opened is on the stack. Navbar.x composes the hidden row, so its order, hidden tabs
 // and tabs of the mod's own carry over. Always on in the redesign.
 //
+// The bar minimizes as the page in front scrolls down and comes back as it scrolls up, the Music app's way
+// (SGRKeyNavbarMinimizeOnScroll): UIKit's own behaviour where the bar is a UITabBarController's (the mini
+// player, iOS 26), and otherwise the mod's own, on any iOS -- see "minimizing on scroll without UIKit's".
+// Which list is the page's is guessed at under "the page's list", or named by the page (Home/HomeScroll.x).
+//
 // Tree (trees/home.txt): NavigationUI_TabBarImpl.TabBarView > TabBarCompactView > UIStackView of
 //   ElementContentView<TabBarItemElement>, each with an SPTEncoreIconView and an SPTEncoreLabel.
 #import "Core/SGCore.h"
 #import "Navbar.h"
 #import "Redesigned/Kit/SGRTokens.h"
+#import "Redesigned/Kit/SGRGlass.h"
 #import "Settings/SGPage.h"
 #import "Headers/SPTEncoreIconView.h"
 #import "Shared/Player/PlayerState.h"
 #import "Redesigned/NowPlayingBar/NowPlayingBar.h"
 #import <objc/message.h>
+#import <QuartzCore/QuartzCore.h>
 
-static char kBarKey, kHostKey;
+static char kBarKey, kHostKey, kPillKey;
 static __weak UIView *sg_stockBar;
 static CGFloat sg_room, sg_glassHeight;   // see "room for the glass bar"
 static BOOL sg_inline;                     // see "the tab bar with the mini player"
+static BOOL sg_minimize;                   // see "minimizing on scroll without UIKit's"
+static __weak UIScrollView *sg_pageScroll; // the page's list the bar minimizes by, see "the page's list"
+
+static void takePageScroll(UIScrollView *scroll, NSString *why);
+static void searchPageScroll(void);
+static void setMinimized(BOOL minimized);
+static void layoutPill(UIView *stockBar, UIView *host, UITabBar *bar);
 
 @interface SGRSystemTabBar : UITabBar <UITabBarDelegate, UIGestureRecognizerDelegate>
 @property (nonatomic, weak) UIView *stockBar;
@@ -208,6 +222,8 @@ static UITabBarItem *itemAtPoint(UITabBar *bar, CGPoint point) {
     NSUInteger index = [self.items indexOfObject:item];
     if (index == NSNotFound || index >= self.sources.count) return;
     SGRTabPicked(self.sources[index]);
+    // A new page comes in with the bar whole, as UIKit's own does it.
+    setMinimized(NO);
     // Home tapped while on Home pops Spotify's stack, which would take Mod Settings straight off it.
     if (!self.holding) forwardTap(self.sources[index]);
     // Spotify repaints its labels a moment later; a tap it did not take snaps the selection back.
@@ -299,6 +315,13 @@ static const CGFloat kFadeDepth = 0.5;
     UIEdgeInsets insets = [super safeAreaInsets];
     insets.bottom = MAX(0, insets.bottom - sg_room);
     return insets;
+}
+
+// The bar fills this view, so only with the bar minimized (alpha 0, no touches) does a touch reach the view
+// itself: beside the pill there is then the page, as beside the Music app's.
+- (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    UIView *hit = [super hitTest:point withEvent:event];
+    return hit == self ? nil : hit;
 }
 @end
 
@@ -467,9 +490,17 @@ static void syncBar(UIView *stockBar) {
     CGFloat height = MAX(bounds.size.height, glassHeight(bar, stockBar));
     CGRect frame = CGRectMake(0, CGRectGetMaxY(bounds) - height, width, height);
     if (!CGRectEqualToRect(host.frame, frame)) host.frame = frame;
-    if (!CGRectEqualToRect(bar.frame, host.bounds)) bar.frame = host.bounds;
+    // By bounds and centre, not frame: minimized, the bar wears a transform, under which a frame set from
+    // outside is undefined and was set again on every pass.
+    CGPoint middle = CGPointMake(CGRectGetMidX(host.bounds), CGRectGetMidY(host.bounds));
+    if (!CGRectEqualToRect(bar.bounds, host.bounds)) bar.bounds = host.bounds;
+    if (!CGPointEqualToPoint(bar.center, middle)) bar.center = middle;
     if (host.superview != stockBar) [stockBar addSubview:host];
     else if (stockBar.subviews.lastObject != host) [stockBar bringSubviewToFront:host];
+    if (sg_minimize) {
+        layoutPill(stockBar, host, bar);
+        if (!sg_pageScroll.window) searchPageScroll();
+    }
     logBarOnce(bar);
     makeRoom(containerOf(stockBar));
 }
@@ -512,13 +543,11 @@ static void syncBar(UIView *stockBar) {
 
 static __weak SGRInlineTabs *sg_inlineTabs;
 static __weak SGRInlineHost *sg_inlineHost;
-static __weak UIScrollView *sg_pageScroll;
 
 // Names Spotify's page in front to the page UIKit reads it from. UIKit looks the scroll view up when a
 // page is selected, not when a page names another one later (simulator: toggling the behaviour or an
 // appearance pass on the page do not do it), so the selection goes to another tab and back, unseen.
 static BOOL sg_flipping;
-static void searchPageScroll(void);
 
 static void nameScrollView(void) {
     SGRInlineTabs *tabs = sg_inlineTabs;
@@ -582,7 +611,7 @@ static void nameScrollView(void) {
     self.delegate = self;
     self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
     if (@available(iOS 26.0, *)) {
-        self.tabBarMinimizeBehavior = UITabBarMinimizeBehaviorOnScrollDown;
+        self.tabBarMinimizeBehavior = SGEnabled(SGRKeyNavbarMinimizeOnScroll) ? UITabBarMinimizeBehaviorOnScrollDown : UITabBarMinimizeBehaviorNever;
         self.accessory = [[UITabAccessory alloc] initWithContentView:SGRMakeMiniPlayer()];
         [self.accessory.contentView registerForTraitChanges:@[UITraitTabAccessoryEnvironment.class] withTarget:self action:@selector(minimizedChanged)];
     }
@@ -820,16 +849,35 @@ static void syncInline(UIView *stockBar) API_AVAILABLE(ios(26.0)) {
     nameScrollView();
 }
 
-// The scroll view UIKit should minimize the bar by is Spotify's page in front: a vertical list over most
-// of the screen inside the tab bar container, the innermost when one holds another. Horizontal pagers
-// are left out. Spotify's first page is on screen before the bar is, so the container is searched once
-// the bar is up; later pages are taken as they come on screen, and whichever list a finger starts
-// dragging up or down is taken on the spot, in case the guess was another.
+#pragma mark - the page's list
+
+// The scroll view the bar minimizes by -- UIKit's own bar with the mini player, or the fallback below -- is
+// Spotify's page in front: a vertical list over most of the screen inside the tab bar container, the
+// innermost when one holds another. Horizontal pagers are left out. Spotify's first page is on screen before
+// the bar is, so the container is searched once the bar is up; later pages are taken as they come on screen,
+// and whichever list a finger starts dragging up or down is taken on the spot, in case the guess was another.
+//
+// A page that knows its own list says so (SGRTabBarFollowScroll: Home's feed, whose list is the very class
+// its horizontal shelves are, Home/HomeScroll.x), and the one it names holds against the guesses while it
+// is on screen; a drag on another list still takes it, since a finger is no guess.
+static __weak UIScrollView *sg_namedScroll;
+
+// TabBarContainerImpl's view, whichever bar is up.
+static UIView *pageContainer(void) {
+    UIView *container = sg_inlineHost.superview;
+    if (container) return container;
+    UIViewController *controller = sg_stockBar ? containerOf(sg_stockBar) : nil;
+    return controller.viewIfLoaded;
+}
+
 static BOOL isPageScroll(UIScrollView *scroll) {
+    UIView *container = pageContainer();
     SGRInlineHost *host = sg_inlineHost;
-    UIView *container = host.superview;
+    UIView *stockBar = sg_stockBar;
     if (!container || !scroll.window || scroll.hidden || scroll.pagingEnabled) return NO;
-    if (![scroll isDescendantOfView:container] || [scroll isDescendantOfView:host]) return NO;
+    if (![scroll isDescendantOfView:container]) return NO;
+    if (host && [scroll isDescendantOfView:host]) return NO;
+    if (stockBar && [scroll isDescendantOfView:stockBar]) return NO;
     return scroll.bounds.size.height >= container.bounds.size.height * 0.5;
 }
 
@@ -838,6 +886,8 @@ static void takePageScroll(UIScrollView *scroll, NSString *why) {
     sg_pageScroll = scroll;
     static NSUInteger logged;
     if (logged++ < 20) SGLog(@"tab bar: follows %@ %p %@ (%@)", NSStringFromClass(scroll.class), scroll, NSStringFromCGRect(scroll.frame), why);
+    // Another list is another page, which comes in with the bar whole.
+    setMinimized(NO);
     nameScrollView();
 }
 
@@ -845,12 +895,25 @@ static void considerScrollView(UIScrollView *scroll) {
     if (!isPageScroll(scroll)) return;
     UIScrollView *current = sg_pageScroll;
     if (current == scroll) return;
+    UIScrollView *named = sg_namedScroll;
+    if (named.window && named != scroll && !named.hidden) return;
     if (current.window && [current isDescendantOfView:scroll]) return;
     takePageScroll(scroll, @"came on screen");
 }
 
+void SGRTabBarFollowScroll(UIScrollView *scroll) {
+    if (!scroll || sg_pageScroll == scroll || (!sg_inline && !sg_minimize)) return;
+    if (!isPageScroll(scroll)) {
+        static NSUInteger logged;
+        if (scroll.window && logged++ < 3) SGLog(@"tab bar: the page's own list %@ %@ is not one to follow (container %@)", NSStringFromClass(scroll.class), NSStringFromCGRect(scroll.frame), pageContainer() ? NSStringFromCGRect(pageContainer().bounds) : @"not up");
+        return;
+    }
+    sg_namedScroll = scroll;
+    takePageScroll(scroll, @"named by its page");
+}
+
 static void searchPageScroll(void) {
-    UIView *container = sg_inlineHost.superview;
+    UIView *container = pageContainer();
     if (!container) return;
     // The bar lays out often; a page with no list is searched at most once a second.
     static CFTimeInterval last;
@@ -862,7 +925,7 @@ static void searchPageScroll(void) {
     while (queue.count) {
         UIView *view = queue.firstObject;
         [queue removeObjectAtIndex:0];
-        if (view == sg_inlineHost || view.hidden || view.alpha < 0.01) continue;
+        if (view == sg_inlineHost || view == sg_stockBar || view.hidden || view.alpha < 0.01) continue;
         if ([view isKindOfClass:UIScrollView.class] && isPageScroll((UIScrollView *)view)) {
             found++;
             considerScrollView((UIScrollView *)view);
@@ -872,6 +935,204 @@ static void searchPageScroll(void) {
     static NSUInteger logged;
     if (!sg_pageScroll.window && logged++ < 5) SGLog(@"tab bar: no page list found to minimize by (%lu looked at)", (unsigned long)found);
 }
+
+#pragma mark - minimizing on scroll without UIKit's
+
+// UIKit minimizes a bar on scroll only for a UITabBarController's bar, from iOS 26, which is the mini
+// player's (SGRInlineTabs). The glass bar everyone else has, SGRSystemTabBar, is a bare UITabBar, and below
+// iOS 26 there is no such behaviour at all: so with the mini player off, the bar is minimized here, on any
+// iOS (SGRKeyNavbarMinimizeOnScroll, on unless switched off).
+//
+// While the followed list is dragged or decelerating a display link reads its offset each frame. Scrolled
+// down kMinimizeAfter in one run the bar folds into a pill at the leading edge -- the selected tab's glyph
+// on a glass circle, where the Music app's minimized bar stands -- and any run up of kExpandAfter, the top
+// of the list, a tab picked or another page coming in front brings it back; so does a tap on the pill. The
+// now playing bar above stays where Spotify puts it. Spring by SGRAnimate, instant under Reduce Motion; a
+// list too short to scroll by much never minimizes it. The bar moves by transform and alpha only, which
+// syncBar's frame work leaves alone.
+static const CGFloat kMinimizeAfter = 24;     // pt scrolled down before the bar minimizes
+static const CGFloat kExpandAfter = 6;        // pt scrolled up before it expands
+static const CGFloat kPillSide = 52;          // the glass circle
+static const CGFloat kPlatterGlass = 62;      // UIKit's glass platter, the top of its 83 pt (see "room")
+static const NSUInteger kSettledFrames = 6;   // frames of no movement before the link stops
+
+static BOOL sg_minimized;
+
+@interface SGRTabBarPill : UIControl
+@property (nonatomic, strong) UIImageView *glyph;
+@end
+
+static char kPillGlassKey;
+
+@implementation SGRTabBarPill
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    if (!(self = [super initWithFrame:frame])) return nil;
+    self.overrideUserInterfaceStyle = UIUserInterfaceStyleDark;
+    _glyph = [UIImageView new];
+    _glyph.contentMode = UIViewContentModeCenter;
+    _glyph.userInteractionEnabled = NO;
+    [self addSubview:_glyph];
+    self.isAccessibilityElement = YES;
+    self.accessibilityTraits = UIAccessibilityTraitButton;
+    [self addTarget:self action:@selector(tapped) forControlEvents:UIControlEventTouchUpInside];
+    return self;
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGRect bounds = self.bounds;
+    SGRGlassInside(self, &kPillGlassKey, MIN(bounds.size.width, bounds.size.height));
+    _glyph.frame = bounds;
+    UIColor *accent = SGRAccent();
+    if (![_glyph.tintColor isEqual:accent]) _glyph.tintColor = accent;
+    if (self.subviews.lastObject != _glyph) [self bringSubviewToFront:_glyph];
+}
+
+// The Music app's minimized bar expands when tapped, and that is all it does.
+- (void)tapped {
+    setMinimized(NO);
+}
+
+@end
+
+static SGRTabBarPill *pillFor(UIView *stockBar) {
+    return stockBar ? objc_getAssociatedObject(stockBar, &kPillKey) : nil;
+}
+
+// Where the pill rests: at the leading edge, centred on the glass platter (iOS 26) or on Spotify's 49 pt
+// row (before it), both at the top of the host.
+static CGPoint pillCentre(UIView *host) {
+    CGFloat platter = kStockRow;
+    if (@available(iOS 26.0, *)) platter = kPlatterGlass;
+    platter = MIN(platter, host.bounds.size.height);
+    BOOL rtl = [UIView userInterfaceLayoutDirectionForSemanticContentAttribute:host.semanticContentAttribute] == UIUserInterfaceLayoutDirectionRightToLeft;
+    CGFloat x = rtl ? host.bounds.size.width - SGRSideMargin - kPillSide / 2 : SGRSideMargin + kPillSide / 2;
+    return CGPointMake(x, round(platter / 2));
+}
+
+// The transform that folds the bar towards the pill: a little smaller, drawn in to the pill's side.
+static CGAffineTransform foldedBar(UIView *host) {
+    CGPoint pill = pillCentre(host);
+    CGFloat dx = (pill.x - CGRectGetMidX(host.bounds)) * 0.2;
+    return CGAffineTransformTranslate(CGAffineTransformMakeScale(0.92, 0.92), dx, 0);
+}
+
+static void layoutPill(UIView *stockBar, UIView *host, UITabBar *bar) {
+    SGRTabBarPill *pill = pillFor(stockBar);
+    if (!pill) {
+        pill = [[SGRTabBarPill alloc] initWithFrame:CGRectMake(0, 0, kPillSide, kPillSide)];
+        pill.alpha = 0;
+        pill.transform = CGAffineTransformMakeScale(0.7, 0.7);
+        pill.userInteractionEnabled = NO;
+        objc_setAssociatedObject(stockBar, &kPillKey, pill, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (pill.superview != host) [host addSubview:pill];
+    else if (host.subviews.lastObject != pill) [host bringSubviewToFront:pill];
+    CGPoint centre = pillCentre(host);
+    if (!CGPointEqualToPoint(pill.center, centre)) pill.center = centre;
+    UITabBarItem *selected = bar.selectedItem;
+    UIImage *glyph = selected.selectedImage ?: selected.image;
+    if (glyph && pill.glyph.image != glyph) pill.glyph.image = glyph;
+    NSString *title = selected.title;
+    if (title.length && ![pill.accessibilityLabel isEqualToString:title]) pill.accessibilityLabel = title;
+    // Minimized, the bar follows the pill's place as the host changes width (a rotation).
+    if (sg_minimized && !CGAffineTransformEqualToTransform(bar.transform, foldedBar(host))) bar.transform = foldedBar(host);
+}
+
+static void setMinimized(BOOL minimized) {
+    if (!sg_minimize || sg_minimized == minimized) return;
+    UIView *stockBar = sg_stockBar;
+    UITabBar *bar = stockBar ? objc_getAssociatedObject(stockBar, &kBarKey) : nil;
+    UIView *host = stockBar ? objc_getAssociatedObject(stockBar, &kHostKey) : nil;
+    SGRTabBarPill *pill = pillFor(stockBar);
+    if (!bar || !host || !pill || !host.window) {
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{ SGLog(@"tab bar: nothing to minimize (bar %@, host %@, pill %@)", bar ? @"up" : @"missing", host.window ? @"up" : @"missing", pill ? @"up" : @"missing"); });
+        return;
+    }
+    sg_minimized = minimized;
+    if (minimized && !pill.glyph.image) layoutPill(stockBar, host, bar);
+    static NSUInteger logged;
+    if (logged++ < 10) SGLog(@"tab bar: %@ by %@", minimized ? @"minimized" : @"expanded", NSStringFromClass(sg_pageScroll.class));
+    bar.userInteractionEnabled = !minimized;
+    pill.userInteractionEnabled = minimized;
+    CGAffineTransform folded = foldedBar(host);
+    SGRAnimate(SGRMotionLayout, ^{
+        bar.alpha = minimized ? 0 : 1;
+        bar.transform = minimized ? folded : CGAffineTransformIdentity;
+        pill.alpha = minimized ? 1 : 0;
+        pill.transform = minimized ? CGAffineTransformIdentity : CGAffineTransformMakeScale(0.7, 0.7);
+    }, nil);
+}
+
+// Reads the followed list's offset each frame while it moves. Started by the drag that begins on it.
+@interface SGRScrollFollower : NSObject
++ (void)follow:(UIScrollView *)scroll;
+@end
+
+@implementation SGRScrollFollower {
+    CADisplayLink *_link;
+    __weak UIScrollView *_scroll;
+    CGFloat _last, _down, _up;
+    NSUInteger _still;
+}
+
++ (void)follow:(UIScrollView *)scroll {
+    static SGRScrollFollower *follower;
+    if (!follower) follower = [SGRScrollFollower new];
+    [follower start:scroll];
+}
+
+- (void)start:(UIScrollView *)scroll {
+    _scroll = scroll;
+    _last = scroll.contentOffset.y;
+    _down = _up = 0;
+    _still = 0;
+    if (_link) return;
+    _link = [CADisplayLink displayLinkWithTarget:self selector:@selector(tick:)];
+    // A link left at its default rate holds the whole app to 60 Hz while it runs (CLAUDE.md).
+    _link.preferredFrameRateRange = CAFrameRateRangeMake(60, 120, 120);
+    [_link addToRunLoop:NSRunLoop.mainRunLoop forMode:NSRunLoopCommonModes];
+}
+
+- (void)stop {
+    [_link invalidate];
+    _link = nil;
+}
+
+- (void)tick:(CADisplayLink *)link {
+    UIScrollView *scroll = _scroll;
+    if (!scroll.window || scroll != sg_pageScroll) {
+        [self stop];
+        return;
+    }
+    UIEdgeInsets inset = scroll.adjustedContentInset;
+    CGFloat y = scroll.contentOffset.y, top = -inset.top;
+    CGFloat room = scroll.contentSize.height + inset.top + inset.bottom - scroll.bounds.size.height;
+    CGFloat bottom = top + room;
+    CGFloat delta = y - _last;
+    _last = y;
+    if (y <= top + 1) {
+        // At the top the bar is whole, however it got there.
+        _down = 0;
+        setMinimized(NO);
+    } else if (delta > 0 && y <= bottom + 1) {
+        _down += delta;
+        _up = 0;
+        // A list with little more than a screen of content never minimizes it: there is nowhere to go.
+        if (_down >= kMinimizeAfter && room > kMinimizeAfter * 3) setMinimized(YES);
+    } else if (delta < 0) {
+        _up -= delta;
+        _down = 0;
+        if (_up >= kExpandAfter) setMinimized(NO);
+    }
+    BOOL moving = scroll.isDragging || scroll.isDecelerating || scroll.isTracking || fabs(delta) > 0.1;
+    _still = moving ? 0 : _still + 1;
+    if (_still >= kSettledFrames) [self stop];
+}
+
+@end
 
 @interface SGRScrollDrag : NSObject
 @end
@@ -884,19 +1145,23 @@ static void searchPageScroll(void) {
         UIEdgeInsets inset = scroll.adjustedContentInset;
         if (logged++ < 40) SGLog(@"tab bar: drag ended on the followed list, offset %.0f, inset top %.0f bottom %.0f, content %.0f of %.0f, page names it %d",
                                  scroll.contentOffset.y, inset.top, inset.bottom, scroll.contentSize.height, scroll.bounds.size.height,
-                                 [sg_inlineTabs.selectedViewController contentScrollViewForEdge:NSDirectionalRectEdgeBottom] == scroll);
+                                 sg_inline && [sg_inlineTabs.selectedViewController contentScrollViewForEdge:NSDirectionalRectEdgeBottom] == scroll);
     }
     if (pan.state != UIGestureRecognizerStateBegan) return;
-    if (![scroll isKindOfClass:UIScrollView.class] || scroll == sg_pageScroll || !isPageScroll(scroll)) return;
-    CGPoint velocity = [pan velocityInView:scroll];
-    if (fabs(velocity.y) <= fabs(velocity.x)) return;
-    takePageScroll(scroll, @"dragged");
+    if (![scroll isKindOfClass:UIScrollView.class]) return;
+    if (scroll != sg_pageScroll) {
+        if (!isPageScroll(scroll)) return;
+        CGPoint velocity = [pan velocityInView:scroll];
+        if (fabs(velocity.y) <= fabs(velocity.x)) return;
+        takePageScroll(scroll, @"dragged");
+    }
+    if (sg_minimize) [SGRScrollFollower follow:scroll];
 }
 @end
 
 static char kDragKey;
 
-%group SGRInlinePlayerScroll
+%group SGRPageScroll
 %hook UIScrollView
 - (void)didMoveToWindow {
     %orig;
@@ -1001,8 +1266,10 @@ static void itemDidLayOut(UIView *item) {
 %ctor {
     if (!SGRedesignedUI()) return;
     if (@available(iOS 26.0, *)) sg_inline = SGRInlinePlayer();
+    // UIKit minimizes the mini player's bar itself; the other bar is minimized here, on any iOS.
+    sg_minimize = !sg_inline && SGEnabled(SGRKeyNavbarMinimizeOnScroll);
     %init;
-    if (sg_inline) %init(SGRInlinePlayerScroll);
+    if (sg_inline || sg_minimize) %init(SGRPageScroll);
     SGRequireClasses(@[
         @"_TtC23NavigationUI_TabBarImpl10TabBarView",
         @"_TtC23NavigationUI_TabBarImpl21TabBarItemElementView",

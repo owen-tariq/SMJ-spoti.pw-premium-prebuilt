@@ -19,6 +19,12 @@
 extern const CGFloat SGRHeaderInfoBottom;     // 14, under the content
 extern const CGFloat SGRHeaderInfoTitleRise;  // 56, of the content over the picture
 
+// The row's controls in the Music app's tinted look (iOS 17 to 26.3): Play on a soft grey capsule rather
+// than white, its glyph and word in the accent colour, and shuffle's glyph in the accent too. Off unless asked
+// for, read on every pass the page hands its controls over, so it applies without a relaunch. The row is on
+// Mod Settings' Albums page (Album/AlbumSettings.m); it reaches the playlist header too, the two being one view.
+#define SGRKeyTintedHeaderControls @"spotifyglass.redesign.header.tintedControls"
+
 @interface SGRHeaderInfo : UIView
 // YES when anything shown changed. nil or empty hides that line.
 - (BOOL)showTitle:(NSString *)title creator:(NSString *)creator length:(NSString *)length about:(NSString *)about;

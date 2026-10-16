@@ -7,6 +7,10 @@
 #define SGRKeyNavbar @"spotifyglass.redesign.navbar"
 // Icons only on the glass bar. Off unless set; applies as soon as the bar lays out again.
 #define SGRKeyNavbarHideLabels @"spotifyglass.redesign.navbar.hideLabels"
+// The bar minimizes as a page scrolls down and comes back as it scrolls up, the Music app's way. On
+// unless switched off; read at launch. With the mini player on (iOS 26) UIKit's own behaviour does it;
+// otherwise TabBar.x does it itself on any iOS, folding the bar into the selected tab's glyph alone.
+#define SGRKeyNavbarMinimizeOnScroll @"spotifyglass.redesign.navbar.minimizeOnScroll"
 
 extern NSString *const SGRNavbarID;      // NSString, the entry's identity
 extern NSString *const SGRNavbarTitle;   // NSString, the name in the settings list and under the icon
@@ -34,6 +38,11 @@ UIView *SGRCurrentModTab(void);
 void SGRTabPicked(UIView *item);
 // TabBar.x: calls what the tap recognizers on `view` itself call, the way a real tap ends; NO when none did.
 BOOL SGRFireTapRecognizers(UIView *view);
+// TabBar.x: the list the bar minimizes by is this one, for a page that knows its own list (Home's feed,
+// Home/HomeScroll.x) rather than the one TabBar.x guesses at. Cheap to call on every layout pass of the
+// list: the same list again returns at once. Ignored while the list is off screen or outside the tab bar's
+// container; nothing happens while the redesign is off.
+void SGRTabBarFollowScroll(UIScrollView *scroll);
 
 UIViewController *SGRNavbarSettingsPage(void);   // the tab editor, in Mod Settings
 UIViewController *SGRNavbarEditorPage(void);     // the tab editor alone, for the welcome tour

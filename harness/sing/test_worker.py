@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the production worker at PCM cadence, including disable during inference (macOS 27)."""
+"""Run the production worker at PCM cadence, including disable during inference and a 48 kHz source (macOS 27)."""
 import argparse
 from pathlib import Path
 import subprocess
@@ -23,7 +23,7 @@ cflags = ["-fsanitize=thread"] if args.tsan else ["-fsanitize=address,undefined"
 subprocess.run(["xcrun", "clang", "-std=c11", "-Wall", "-Wextra", "-Werror", "-g", "-O1", *cflags,
                 "-I", str(src), "-x", "c", str(here / "worker_test.c"),
                 *(str(src / "Shared/Sing" / name) for name in
-                  ["SGSingStream.m", "SGSingTimeline.m", "SGSingDSP.m"]),
+                  ["SGSingStream.m", "SGSingTimeline.m", "SGSingDSP.m", "SGSingResample.m"]),
                 str(src / "Shared/Audio/SGAudioRingBuffer.m"), "-L", str(out), "-lStemWorker",
                 "-Wl,-rpath," + str(out), "-o", str(out / "worker-test")], check=True)
 command = [str(out / "worker-test"), str(args.model.resolve()), str(args.golden_raw.resolve())]
@@ -32,3 +32,6 @@ subprocess.run([*command, "205"], check=True)
 subprocess.run([*command, "2000", "stall"], check=True)
 subprocess.run([*command, "--cancel-loading"], check=True)
 subprocess.run([*command, "--cold"], check=True)
+# A lossless source: the stream at 48 kHz, the fixture brought to it, and the worker resampling each window to
+# the model and its vocals back.
+subprocess.run([*command, "--rate", "48000"], check=True)

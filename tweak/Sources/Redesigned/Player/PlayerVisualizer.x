@@ -12,11 +12,17 @@
 //
 // The palette is read from the now playing artwork off the main thread: the picture shrunk to a few
 // pixels, and up to four colours picked by how saturated and bright they are, each a different hue from
-// the last; the field's own colour stands in until one is read and when a cover has too few.
+// the last; the field's own colour stands in until one is read and when a cover has too few. The Player
+// page's Colours row (PlayerBackgroundSettings.m) can put the accent colour's tones or a Library look's
+// colours in the cover's place, and its sliders set the layer's look; a Library look (Shared/Library, a JSON
+// dictionary: intensity, motion, glowCount, colours as "#RRGGBB") sets whichever of those it names.
 // Threading: main thread only, apart from the palette's read.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
+#import "Redesigned/Kit/SGRTrackAccent.h"
 #import "Redesigned/Kit/SGRVisualizerLayer.h"
+#import "Shared/Library/Library.h"
+#import "Shared/Library/SGLibraryStore.h"
 #import "Shared/Visualizer/SGAudioLevels.h"
 #import "Player.h"
 
@@ -81,6 +87,11 @@ static CFTimeInterval sg_lastHeard, sg_pausedAt;
 static NSUInteger sg_paletteGeneration;
 static NSArray<UIColor *> *sg_palette;
 static UIImage *sg_paletteFor;
+// The settings as resolved (readSettings): where the colours come from, the look's own colours when they do,
+// and the colours last handed to the layer.
+static SGRVisualizerColours sg_colours;
+static NSArray<UIColor *> *sg_lookColors;
+static NSArray<UIColor *> *sg_applied;
 
 static float shownOpacity(CALayer *layer) {
     return ((CALayer *)layer.presentationLayer ?: layer).opacity;
@@ -209,20 +220,107 @@ static NSArray<UIColor *> *colorsOf(UIImage *image) {
     return colors;
 }
 
+// A colour at the glow's value: the accent's tones and the look's colours get the lift the cover's get.
+static UIColor *lifted(CGFloat r, CGFloat g, CGFloat b) {
+    CGFloat mx = MAX(r, MAX(g, b)), scale = mx > 0 ? kGlowValue / mx : 1;
+    return [UIColor colorWithRed:MIN(1, r * scale) green:MIN(1, g * scale) blue:MIN(1, b * scale) alpha:1];
+}
+
+// The accent colour and three tones around it (the hue turned either way, and a paler one), so four glows differ.
+static NSArray<UIColor *> *accentPalette(void) {
+    UIColor *accent = SGRAccent();
+    CGFloat h = 0, s = 0, v = 0, a = 1;
+    if (![accent getHue:&h saturation:&s brightness:&v alpha:&a]) return @[];
+    s = MAX(s, 0.35);
+    NSMutableArray<UIColor *> *colors = [NSMutableArray array];
+    const CGFloat turns[4] = {0, 0.09, -0.09, 0.04};
+    const CGFloat saturations[4] = {1, 0.9, 0.9, 0.55};
+    for (int i = 0; i < 4; i++) {
+        UIColor *tone = [UIColor colorWithHue:fmod(h + turns[i] + 1, 1) saturation:MIN(1, s * saturations[i]) brightness:1 alpha:1];
+        CGFloat r = 0, g = 0, b = 0;
+        if ([tone getRed:&r green:&g blue:&b alpha:&a]) [colors addObject:lifted(r, g, b)];
+    }
+    return colors;
+}
+
+// "#RRGGBB" (or "RRGGBB") to a colour, nil for anything else.
+static UIColor *colorFromHex(id value) {
+    if (![value isKindOfClass:NSString.class]) return nil;
+    NSString *hex = [(NSString *)value hasPrefix:@"#"] ? [value substringFromIndex:1] : value;
+    if (hex.length != 6) return nil;
+    unsigned int rgb = 0;
+    if (![[NSScanner scannerWithString:hex] scanHexInt:&rgb]) return nil;
+    return lifted(((rgb >> 16) & 0xFF) / 255.0, ((rgb >> 8) & 0xFF) / 255.0, (rgb & 0xFF) / 255.0);
+}
+
 static void applyPalette(void) {
     SGRPlayerVisualizerView *view = sg_view;
     if (!view) return;
-    NSMutableArray<UIColor *> *colors = [NSMutableArray arrayWithArray:sg_palette ?: @[]];
+    NSMutableArray<UIColor *> *colors = [NSMutableArray array];
+    if (sg_colours == SGRVisualizerColoursAccent) [colors addObjectsFromArray:accentPalette()];
+    else if (sg_colours == SGRVisualizerColoursLook) [colors addObjectsFromArray:sg_lookColors ?: @[]];
+    // The cover's colours: the choice, or what an accent that could not be read or a look without colours leaves.
+    if (!colors.count) [colors addObjectsFromArray:sg_palette ?: @[]];
     UIColor *field = sg_field.fieldColor;
     if (colors.count < 2 && field) {
         // The field's colour, lifted, so a near-grey cover still glows in its own tone.
         CGFloat r = 0, g = 0, b = 0, a = 1;
-        if ([field getRed:&r green:&g blue:&b alpha:&a]) {
-            CGFloat mx = MAX(r, MAX(g, b)), scale = mx > 0 ? kGlowValue / mx : 1;
-            [colors addObject:[UIColor colorWithRed:MIN(1, r * scale) green:MIN(1, g * scale) blue:MIN(1, b * scale) alpha:1]];
+        if ([field getRed:&r green:&g blue:&b alpha:&a]) [colors addObject:lifted(r, g, b)];
+    }
+    sg_applied = [colors copy];
+    view.glowLayer.colors = colors;
+}
+
+NSArray<UIColor *> *SGRPlayerVisualizerColors(void) {
+    return sg_applied ?: @[];
+}
+
+#pragma mark - the settings and the look
+
+static float percentOf(id value, NSInteger fallback) {
+    return (float)([value isKindOfClass:NSNumber.class] ? [value doubleValue] : fallback) / 100.0f;
+}
+
+// The Player page's keys, and over them whatever the Library look picked sets, when Colours is Look; handed to
+// the layer (which holds each within its range) and to applyPalette.
+static void readSettings(void) {
+    SGRVisualizerSettings settings = SGRPlayerVisualizerSettings();
+    SGRVisualizerLook look = {
+        .intensity = settings.intensity / 100.0f,
+        .motion = settings.motion / 100.0f,
+        .glowCount = (int)settings.glowCount,
+    };
+    NSArray<UIColor *> *lookColors = nil;
+    if (settings.colours == SGRVisualizerColoursLook) {
+        NSString *name = SGRPlayerVisualizerLookName();
+        NSDictionary<NSString *, id> *stored = name ? SGLibraryLook(name) : nil;
+        if (stored) {
+            if (stored[@"intensity"]) look.intensity = percentOf(stored[@"intensity"], settings.intensity);
+            if (stored[@"motion"]) look.motion = percentOf(stored[@"motion"], settings.motion);
+            if ([stored[@"glowCount"] isKindOfClass:NSNumber.class]) look.glowCount = [stored[@"glowCount"] intValue];
+            NSMutableArray<UIColor *> *colors = [NSMutableArray array];
+            id listed = stored[@"colours"] ?: stored[@"colors"];
+            if ([listed isKindOfClass:NSArray.class]) {
+                for (id entry in (NSArray *)listed) {
+                    UIColor *color = colorFromHex(entry);
+                    if (color && colors.count < kMaxColors) [colors addObject:color];
+                }
+            }
+            lookColors = colors;
+        } else {
+            static NSString *missing;
+            if (name && ![name isEqualToString:missing]) {
+                missing = name;
+                say(@"look %@ is not on the Library's shelf, the cover's colours show", name);
+            }
         }
     }
-    view.glowLayer.colors = colors;
+    sg_colours = settings.colours;
+    sg_lookColors = lookColors;
+    SGRPlayerVisualizerView *view = sg_view;
+    if (!view) return;
+    view.glowLayer.look = look;
+    applyPalette();
 }
 
 static void readPalette(void) {
@@ -312,6 +410,7 @@ UIView *SGRPlayerVisualizerViewIn(UIView *plane, SGRArtworkField *field) {
     if (sg_view != view) {
         sg_view = view;
         sg_shown = NO;
+        readSettings();
         readPalette();
         update();
     }
@@ -346,6 +445,7 @@ static SGRPlayerVisualizerWatcher *sg_watcher;
         say(@"%@", sg_picked ? @"picked" : @"another background picked");
         if (sg_picked) {
             SGRVisualizerPrepare();
+            readSettings();
             if (!SGAudioLevelsAvailable()) say(@"Spotify's output is not tapped, the glows will hear nothing");
         }
         update();
@@ -357,6 +457,15 @@ static SGRPlayerVisualizerWatcher *sg_watcher;
     }];
     [center addObserverForName:SGRFieldColorDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
         if (sg_view && note.object == sg_field) applyPalette();
+    }];
+    // The Player page's rows, a look saved, imported or deleted, and the accent following a new cover.
+    for (NSNotificationName name in @[SGRVisualizerSettingsDidChangeNotification, SGLibraryLooksDidChangeNotification]) {
+        [center addObserverForName:name object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+            if (sg_view) readSettings();
+        }];
+    }
+    [center addObserverForName:SGRTrackAccentDidChangeNotification object:nil queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *note) {
+        if (sg_view && sg_colours == SGRVisualizerColoursAccent) applyPalette();
     }];
     for (NSNotificationName name in @[UIApplicationDidBecomeActiveNotification, UIApplicationWillResignActiveNotification,
                                       UIApplicationDidEnterBackgroundNotification, UIApplicationWillEnterForegroundNotification]) {

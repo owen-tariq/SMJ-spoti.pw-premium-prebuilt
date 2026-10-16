@@ -7,8 +7,20 @@ Mel-Band RoFormer; no audio leaves the phone. It needs iOS 18.
 ## Audio and model integration
 
 `Shared/Audio/SGAudioPipeline.x` owns Spotify's mixer connection and RemoteIO observation once.
-Sing operates on 44.1 kHz stereo source samples before time/pitch processing; output processing
-runs speed/pitch, the audio effects engine, then music haptics in a fixed order. The audio callback
+Sing operates on Spotify's stereo source samples before time/pitch processing, at the rate the
+source decodes at: 44.1 kHz, or 48, 88.2 or 96 kHz for lossless tracks and some output routes
+(`SGSingSupportedRate` in `Shared/Sing/SGSingFormat.h`; anything else keeps Spotify's own audio and
+the explanation names the rate and channels it found). The render side -- stream, timeline, reserve
+and mix -- is sized for that rate at runtime (`SGSingGeometryAt`: two seconds a window, a 1.5 s hop,
+120 ms of reserve, eight seconds of timeline) and never resamples. Only the off-render Swift worker
+does: a source not at the model's 44.1 kHz has each two-second window taken to exactly the model's
+88,200 frames before the separator and its vocals back to exactly the source's frames after, through
+`Shared/Sing/SGSingResample.h`, a deterministic polyphase Kaiser-windowed sinc that treats every
+window on its own (silence beyond its ends), so the timeline cannot drift and the few imprecise edge
+samples are the ones the half-second overlap-add weights to nothing. A graph that comes up at another
+supported rate than the generation was sized for retires it and starts one at that rate around the
+same warm model. Output processing runs speed/pitch, the audio effects engine, then music haptics
+in a fixed order. The audio callback
 exchanges generation/track/source-frame/format-stamped packets with an asynchronous Swift worker
 through bounded single-producer/single-consumer queues. Model loading and inference never run on
 that callback. The reconstructed mix is `original - (1 - level²) * vocals`, clamped to [-1, 1],
@@ -103,7 +115,7 @@ Experiments and their outcome:
 ## Checks
 
 ```sh
-python3 harness/sing/test.py                 # DSP, timeline and stream, ASan/UBSan
+python3 harness/sing/test.py                 # DSP, resampler, timeline and stream at 44.1, 48 and 96 kHz, ASan/UBSan
 TSAN=1 python3 harness/sing/test.py          # the same under ThreadSanitizer
 python3 harness/sing/test_controller.py <booted-iOS-27-simulator-UDID>
 python3 harness/sing/fetch_goldens.py        # golden_raw.f32 and golden_vocals.f32 into build/goldens
@@ -114,7 +126,11 @@ The C tests run the production packet queue, mixer, timeline and stream: wraparo
 pressure, 100,000 concurrent transfers, generation/track/format rejection, gain ramps, limiting,
 exact source order through buffering, aligned bypass and draining, cancellation before
 preparation, a worker outage, variable callback sizes, a depleted source queue and a source with no
-verified read-ahead, which must keep playing dry. Recovery requires the full ready-vocal reserve,
+verified read-ahead, which must keep playing dry. The timeline and stream tests run at 44.1, 48 and
+96 kHz with the geometry of each (a rate as an argument runs just that one), and the resampler test
+takes every supported rate to the model's window and back: exact lengths, an exact copy at the same
+rate, unity gain at DC, a 1 kHz tone within 1 % RMS (it is within 0.002 %), tones above 60 dB SNR,
+silence to exactly silence and bit-for-bit determinism. Recovery requires the full ready-vocal reserve,
 and a two-minute regression holds inference at 1.3 seconds, as observed on a warm phone, checking
 every original sample through preparation and every reduced sample after activation.
 
@@ -130,7 +146,9 @@ The worker test runs the real model through the production stream at 44.1 kHz ca
 checking sample order through activation and a drain back to direct audio, disabling during an
 in-flight inference, a withheld result that forces recovery (which must end within the stream's
 eight-second budget), unloading while the model prepares, and rendering from the first callback
-while the model loads cold. Add `--tsan` to instrument both the Swift worker and the C transport.
+while the model loads cold; its last run is a 48 kHz source (`--rate 48000`: the fixture brought to
+48 kHz by the production resampler, the stream at that rate, and the worker resampling each window to
+the model and back). Add `--tsan` to instrument both the Swift worker and the C transport.
 
 The serial window worker and the FFT have Swift tests of their own:
 

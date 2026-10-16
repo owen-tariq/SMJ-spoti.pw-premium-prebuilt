@@ -18,6 +18,12 @@
 //
 // The title is Spotify's own name for the tab, read off its tab bar item (id=TabBar.Item.Home, 10.txt:3100),
 // so it follows the app's language.
+//
+// Collapsing title (SGRKeyHomeCollapsingTitle, off unless asked for): the header neither moves nor shrinks as
+// the feed scrolls, so the Music app's large title scrolling away is done as a crossfade in place. Once the
+// feed has scrolled kCollapseAt past its top the large title fades out and a small centred title fades in
+// over a hairline along the header's bottom; back within kExpandAt of the top the large title returns. A fade
+// is not motion and stays under Reduce Motion. HomeScroll.x tells this file where the list is on every pass.
 #import "Core/SGCore.h"
 #import "Redesigned/Kit/SGRKit.h"
 #import "Home.h"
@@ -25,8 +31,11 @@
 // Tries at finding the tab's name before settling for the English one: a miss walks the window.
 static const NSUInteger kTitleTries = 8;
 
-static char kTitleKey, kTabKey;
+static char kTitleKey, kTabKey, kSmallTitleKey, kHairlineKey;
 static NSString *sg_tabName;
+// Collapsing title: scrolled this far past the top the small title takes over, this near it the large one returns.
+static const CGFloat kCollapseAt = 32, kExpandAt = 12;
+static BOOL sg_collapsed;
 
 static void vanish(UIView *view) {
     if (!view) return;
@@ -74,6 +83,35 @@ static UILabel *titleIn(UIView *header) {
     }
     if (title.superview != header) [header addSubview:title];
     return title;
+}
+
+// The small title and the hairline of the collapsing title, made on the first pass that wants them and kept
+// transparent until the feed has scrolled; the large title stays what the header is read by.
+static UILabel *smallTitleIn(UIView *header) {
+    UILabel *small = objc_getAssociatedObject(header, &kSmallTitleKey);
+    if (!small) {
+        small = [UILabel new];
+        small.textColor = SGRPrimary();
+        small.textAlignment = NSTextAlignmentCenter;
+        small.userInteractionEnabled = NO;
+        small.accessibilityElementsHidden = YES;
+        small.alpha = 0;
+        objc_setAssociatedObject(header, &kSmallTitleKey, small, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (small.superview != header) [header addSubview:small];
+    return small;
+}
+
+static UIView *hairlineIn(UIView *header) {
+    UIView *line = objc_getAssociatedObject(header, &kHairlineKey);
+    if (!line) {
+        line = [UIView new];
+        line.userInteractionEnabled = NO;
+        line.alpha = 0;
+        objc_setAssociatedObject(header, &kHairlineKey, line, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (line.superview != header) [header addSubview:line];
+    return line;
 }
 
 // The header's views, found once: the page lays out again as it appears, and the walk names classes.
@@ -132,12 +170,60 @@ static void layoutHeader(UIViewController *page) {
     CGRect frame = CGRectMake(SGRSideMargin, round(CGRectGetMidY(stack.frame) - height / 2), MAX(0, trailing - SGRSideMargin), height);
     if (!CGRectEqualToRect(title.frame, frame)) title.frame = frame;
 
+    if (SGHidden(SGRKeyHomeCollapsingTitle)) {
+        UILabel *small = smallTitleIn(header);
+        if (![small.text isEqualToString:text]) small.text = text;
+        UIFont *smallFont = SGRFont(UIFontTextStyleHeadline, UIFontWeightSemibold, UIContentSizeCategoryLarge);
+        if (![small.font isEqual:smallFont]) small.font = smallFont;
+        // Centred on the page, kept clear of the avatar on either side.
+        CGFloat inset = face ? header.bounds.size.width - trailing + SGRGrid : SGRSideMargin;
+        CGFloat smallHeight = ceil(smallFont.lineHeight);
+        CGRect smallFrame = CGRectMake(inset, round(CGRectGetMidY(stack.frame) - smallHeight / 2), MAX(0, header.bounds.size.width - 2 * inset), smallHeight);
+        if (!CGRectEqualToRect(small.frame, smallFrame)) small.frame = smallFrame;
+        UIView *line = hairlineIn(header);
+        UIColor *hairline = SGRHairline();
+        if (![line.backgroundColor isEqual:hairline]) line.backgroundColor = hairline;
+        CGFloat pixel = 1 / MAX(1, header.window.screen.scale);
+        CGRect lineFrame = CGRectMake(0, header.bounds.size.height - pixel, header.bounds.size.width, pixel);
+        if (!CGRectEqualToRect(line.frame, lineFrame)) line.frame = lineFrame;
+    } else if (sg_collapsed) {
+        // Switched off while collapsed: the large title comes straight back.
+        sg_collapsed = NO;
+        title.alpha = 1;
+        ((UIView *)objc_getAssociatedObject(header, &kSmallTitleKey)).alpha = 0;
+        ((UIView *)objc_getAssociatedObject(header, &kHairlineKey)).alpha = 0;
+    }
+
     static dispatch_once_t once;
     dispatch_once(&once, ^{
         SGLog(@"redesign home: header %@, avatar %@ in the stack %@, title %@, scrim %@", NSStringFromCGRect(header.frame),
               face ? NSStringFromCGRect(face.frame) : @"not found", NSStringFromCGRect(stack.frame), NSStringFromCGRect(frame),
               sg_scrim ? @"found" : @"not found");
     });
+}
+
+void SGRHomeListScrolled(UIScrollView *list) {
+    if (!SGHidden(SGRKeyHomeCollapsingTitle)) return;
+    UIView *header = sg_header;
+    UILabel *title = header ? objc_getAssociatedObject(header, &kTitleKey) : nil;
+    UILabel *small = header ? objc_getAssociatedObject(header, &kSmallTitleKey) : nil;
+    UIView *line = header ? objc_getAssociatedObject(header, &kHairlineKey) : nil;
+    if (!title || !small || !line || !header.window) {
+        static dispatch_once_t once;
+        dispatch_once(&once, ^{ SGLog(@"redesign home: no header to collapse the title of, left as it is"); });
+        return;
+    }
+    CGFloat scrolled = list.contentOffset.y + list.adjustedContentInset.top;
+    BOOL collapse = sg_collapsed ? scrolled > kExpandAt : scrolled > kCollapseAt;
+    if (collapse == sg_collapsed) return;
+    sg_collapsed = collapse;
+    static NSUInteger logged;
+    if (logged++ < 6) SGLog(@"redesign home: title %@ at %.0f pt", collapse ? @"collapsed" : @"expanded", scrolled);
+    SGRAnimate(SGRMotionFade, ^{
+        title.alpha = collapse ? 0 : 1;
+        small.alpha = collapse ? 1 : 0;
+        line.alpha = collapse ? 1 : 0;
+    }, nil);
 }
 
 %hook _TtC19Home_FunkisPageImpl20FunkisViewController
