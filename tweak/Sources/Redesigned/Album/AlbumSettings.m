@@ -1,11 +1,13 @@
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
+#import "Redesigned/Kit/SGRHeaderInfo.h"
 #import "Album.h"
 
 UIViewController *SGRAlbumSettingsPage(void) {
     NSArray<SGModSection *> *sections = @[
         SGNotedSection(@"Header", @[
             SGSwitchRow(@"Animated cover", @"Apple Music's, where the album has one", SGRKeyAnimatedCovers),
+            SGOptionRow(@"Tinted Play and Shuffle", @"Play on a grey capsule in the accent colour, like the Music app's. Playlists too", SGRKeyTintedHeaderControls),
         ], @"Apple Music gets only the artist and album name. Nothing is downloaded in Low Data or Low Power Mode."),
         SGNotedSection(@"Track list", @[
             SGSwitchRow(@"Hide album artists", @"Featured artists stay visible", SGRKeyHideAlbumArtists),
