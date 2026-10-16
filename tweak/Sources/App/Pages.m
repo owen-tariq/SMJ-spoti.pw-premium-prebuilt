@@ -13,6 +13,7 @@
 #import "Native/Player/NowPlaying.h"
 #import "Shared/Haptics/Haptics.h"
 #import "Shared/Transitions/Transitions.h"
+#import "Shared/SleepTimer/SleepTimer.h"
 #import "Shared/LiveActivity/LiveActivity.h"
 #import "Redesigned/Lyrics/LyricsText.h"
 #import "Redesigned/Navbar/Navbar.h"
@@ -98,6 +99,7 @@ UIViewController *SGPlayerSettingsPage(void) {
     // Vibrations hook Spotify's own controls and its audio, so they answer under either look.
     [sections addObjectsFromArray:SGVibrationsSections()];
     [sections addObjectsFromArray:SGTransitionsSections()];
+    [sections addObjectsFromArray:SGSleepTimerSections()];
 
     return [[SGModPage alloc] initWithTitle:@"Player" intro:SGRestartNote sections:sections footer:nil];
 }
