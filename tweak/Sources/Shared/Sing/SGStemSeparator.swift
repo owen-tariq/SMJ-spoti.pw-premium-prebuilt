@@ -14,8 +14,8 @@ enum SGStemError: Error {
     case invalidModel, invalidInput, invalidOutput
 }
 
-// The one shape the model has. The C side (Shared/Sing/SGSingFormat.h) names the same window, and
-// SGStemWorkerStart checks the loaded model against the window it is given.
+// The one shape the model has. The C side (Shared/Sing/SGSingFormat.h) names the same window; the worker
+// (SGStemWorker.swift) resamples a source at another rate to it and back, a window at a time.
 enum SGStemShape {
     static let fftSize = 2048, stftHop = 441, stftFrames = 201
     static let bins = fftSize / 2 + 1
