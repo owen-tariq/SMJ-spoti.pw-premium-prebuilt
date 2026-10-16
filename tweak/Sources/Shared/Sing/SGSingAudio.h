@@ -4,8 +4,10 @@
 typedef struct SGSingAudio SGSingAudio;
 // One source generation. Off-render creation, attachment, detachment and destruction. The worker
 // retains Stream until it finishes; detach first, then await its completion before Destroy.
-SGSingAudio *SGSingAudioCreate(SGAudioStamp origin, uint32_t windowFrames, uint32_t hopFrames, float level);
+// geometry is the source rate's (SGSingGeometryAt); Attach takes only a source at that rate.
+SGSingAudio *SGSingAudioCreate(SGAudioStamp origin, SGSingGeometry geometry, float level);
 SGSingStream *SGSingAudioStream(SGSingAudio *audio);
+uint32_t SGSingAudioSampleRate(const SGSingAudio *audio);
 bool SGSingAudioAttach(SGSingAudio *audio);
 void SGSingAudioDetach(SGSingAudio *audio);
 void SGSingAudioDestroy(SGSingAudio *audio);
