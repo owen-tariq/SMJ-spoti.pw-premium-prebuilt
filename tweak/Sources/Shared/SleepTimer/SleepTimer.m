@@ -23,7 +23,8 @@ static const NSTimeInterval kBackgroundGuard = 25;
 static NSString *const kAnyTrack = @"*";
 
 static NSTimer *sg_timer;
-static UIBackgroundTaskIdentifier sg_task = UIBackgroundTaskInvalid;
+// UIBackgroundTaskInvalid is an extern variable, not a compile-time constant, so it is set at launch.
+static UIBackgroundTaskIdentifier sg_task;
 
 #define say(format, ...) SGLog(@"sleep timer: " format, ##__VA_ARGS__)
 
@@ -211,6 +212,7 @@ static void enteredBackground(void) {
 static SGSleepTimerWatcher *sg_watcher;
 
 __attribute__((constructor)) static void sleepTimerAtLaunch(void) {
+    sg_task = UIBackgroundTaskInvalid;
     dispatch_async(dispatch_get_main_queue(), ^{
         // Whatever was running when Spotify last quit: nothing was playing in between, so a deadline passed
         // and a track waited for are dropped rather than pausing a fresh start.
