@@ -1,7 +1,9 @@
-// Drag the three texts of a line into size order, largest first.
+// Drag the three texts of a line into size order, largest first; and the Font row, picking a family the Library
+// registered.
 #import "Core/SGCore.h"
 #import "Settings/SGModPage.h"
 #import "Settings/SGPageStyle.h"
+#import "Shared/Library/Library.h"
 #import "LyricsText.h"
 
 @interface SGRLyricsTextPage : SGPage
@@ -90,4 +92,92 @@
 
 SGModRow *SGRLyricsTextSizesRow(void) {
     return SGPageRow(@"Text sizes", ^UIViewController *{ return [SGRLyricsTextPage new]; });
+}
+
+#pragma mark - the font
+
+// The Font row's list: System, then every family the Library registered (Shared/Library), each set in itself,
+// a checkmark against the one stored. The family is stored by name, so the list can change under it.
+@interface SGRLyricsFontPage : SGPage
+@end
+
+@implementation SGRLyricsFontPage {
+    NSArray<NSString *> *_families;
+    UIView *_footer;
+}
+
+- (instancetype)init {
+    if (!(self = [super initWithStyle:UITableViewStyleInsetGrouped])) return nil;
+    self.title = @"Font";
+    return self;
+}
+
+- (void)viewDidLoad {
+    [super viewDidLoad];
+    _footer = SGNote(@"Fonts come from Mod Settings > Library > Fonts: import a .ttf or .otf there and its family is offered here.");
+    self.tableView.tableFooterView = _footer;
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    [super viewWillAppear:animated];
+    _families = SGLibraryFontFamilies();
+    [self.tableView reloadData];
+}
+
+- (void)viewWillLayoutSubviews {
+    [super viewWillLayoutSubviews];
+    SGFitNote(self.tableView, _footer, 16, 24);
+}
+
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    SGInsetForBars(self.tableView);
+}
+
+- (NSInteger)tableView:(UITableView *)table numberOfRowsInSection:(NSInteger)section {
+    return 1 + (NSInteger)_families.count;
+}
+
+- (CGFloat)tableView:(UITableView *)table heightForHeaderInSection:(NSInteger)section {
+    return CGFLOAT_MIN;
+}
+
+- (CGFloat)tableView:(UITableView *)table heightForFooterInSection:(NSInteger)section {
+    return CGFLOAT_MIN;
+}
+
+- (UITableViewCell *)tableView:(UITableView *)table cellForRowAtIndexPath:(NSIndexPath *)path {
+    UITableViewCell *cell = SGDequeueCell(table, @"font");
+    NSString *family = path.row ? _families[(NSUInteger)path.row - 1] : nil;
+    SGFillCell(cell, family ?: @"System", nil, nil, nil);
+    if (family && [UIFont fontNamesForFamilyName:family].count) {
+        UIListContentConfiguration *content = (UIListContentConfiguration *)cell.contentConfiguration;
+        content.textProperties.font = [UIFont fontWithDescriptor:[UIFontDescriptor fontDescriptorWithFontAttributes:@{UIFontDescriptorFamilyAttribute: family}]
+                                                            size:SGTitleFont().pointSize + 2];
+        cell.contentConfiguration = content;
+    }
+    cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+    NSString *stored = SGRLyricsFontFamily();
+    BOOL chosen = family ? [family isEqualToString:stored] : stored == nil;
+    if (chosen) {
+        UIImageView *tick = SGSymbolView(@"checkmark", 13, UIImageSymbolWeightSemibold, 16);
+        tick.tintColor = SGGreen();
+        cell.accessoryView = tick;
+    }
+    return cell;
+}
+
+- (void)tableView:(UITableView *)table didSelectRowAtIndexPath:(NSIndexPath *)path {
+    [table deselectRowAtIndexPath:path animated:NO];
+    SGRSetLyricsFontFamily(path.row ? _families[(NSUInteger)path.row - 1] : nil);
+    [table reloadData];
+    [self.navigationController popViewControllerAnimated:YES];
+}
+
+@end
+
+SGModRow *SGRLyricsFontRow(void) {
+    SGModRow *row = SGPageRow(@"Font", ^UIViewController *{ return [SGRLyricsFontPage new]; });
+    row.value = ^NSString *{ return SGRLyricsFontFamily() ?: @"System"; };
+    return row;
 }
