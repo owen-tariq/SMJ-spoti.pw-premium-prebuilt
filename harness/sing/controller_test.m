@@ -64,6 +64,7 @@ SGAudioSourcePrefix SGAudioPipelineSourcePrefix(UInt32 maximumFrames, bool conti
     return (SGAudioSourcePrefix){frames, continuous && boundary < frames ? (UInt32)boundary : UINT32_MAX};
 }
 bool SGAudioPipelineSourceCanReadAhead(void) { return outputAvailable; }
+bool SGAudioSourceQueueLayoutKnown(void) { return true; }
 bool SGAudioPipelineSourceProcessorAttached(void *context) { return context == attached; }
 bool SGAudioPipelineSourceFormat(AudioStreamBasicDescription *format) {
     *format = (AudioStreamBasicDescription){44100, kAudioFormatLinearPCM,

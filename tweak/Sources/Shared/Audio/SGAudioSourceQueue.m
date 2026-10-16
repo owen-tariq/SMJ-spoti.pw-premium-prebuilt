@@ -30,6 +30,7 @@ void SGAudioSourceQueueInitialize(void) {
         }
     }
 }
+bool SGAudioSourceQueueLayoutKnown(void) { return sg_sourceLayout; }
 bool SGAudioSourceQueueSupported(AURenderCallbackStruct callback) {
     uint64_t instruction;
     return sg_sourceLayout && (uintptr_t)callback.inputProc == sg_sourceImage + 0x24dd98 &&

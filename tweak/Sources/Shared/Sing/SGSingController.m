@@ -6,6 +6,7 @@
 #import "SGSingResample.h"
 #import "SGStemWorker.h"
 #import "Shared/Audio/SGAudioPipeline.h"
+#import "Shared/Audio/SGAudioSourceQueue.h"
 #import "Shared/Player/PlayerState.h"
 #import "Shared/Player/SpeedPitch.h"
 #import <AVFoundation/AVFoundation.h>
@@ -121,6 +122,15 @@ static double sourceRate(AudioStreamBasicDescription *format) {
 }
 // Why this source will not do, naming what it is when that is known; every answer names the rates Sing takes.
 static NSString *unsupportedSource(bool known, AudioStreamBasicDescription format) {
+    // The read-ahead Sing depends on reads Spotify's decoder at addresses taken from one exact build. Any other
+    // build fails here first, and the audio format is not the reason, so say what is.
+    if (!SGAudioSourceQueueLayoutKnown()) {
+        NSString *version = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"this version";
+        return [NSString stringWithFormat:@"Sing only works on Spotify 9.1.78. This is Spotify %@, whose audio engine Sing can't read ahead in yet. Your other mod features are unaffected.", version];
+    }
+    // Format matches what Sing takes, so the source's callback or the processor install refused it.
+    if (known && SGSingSupportedRate(format.mSampleRate) && format.mChannelsPerFrame == 2)
+        return @"Sing couldn't attach to Spotify's audio player. Pause, play again and retry; if it keeps happening, restart Spotify.";
     if (!known) return @"Sing needs a supported Spotify audio source with local stereo playback at 44.1, 48, 88.2 or 96 kHz. Start a song on this iPhone and try again.";
     return [NSString stringWithFormat:@"Sing cannot use this audio source: Spotify is playing %g kHz %u-channel audio, and Sing needs stereo at 44.1, 48, 88.2 or 96 kHz.",
             format.mSampleRate / 1000, (unsigned)format.mChannelsPerFrame];
